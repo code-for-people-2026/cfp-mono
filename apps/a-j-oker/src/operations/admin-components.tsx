@@ -24,6 +24,7 @@ export async function OperationsListTools({ collectionSlug: slug, user, payload 
       <nav aria-label="案件快捷筛选">
         <a href={recordURL(slug, undefined, admin)}>全部案件</a>
         <a href={collectionURL(slug, filters.pending, admin)}>待受理</a>
+        <a href={collectionURL(slug, filters.ageReview, admin)}>年龄限制复核</a>
         <a href={collectionURL(slug, filters.mine, admin)}>由我负责</a>
         <a href={collectionURL(slug, filters.overdue, admin)}>仅超时</a>
       </nav><p>使用「过滤条件」选择严重程度、负责人、状态或日期；打开案件详情进行处理。</p>

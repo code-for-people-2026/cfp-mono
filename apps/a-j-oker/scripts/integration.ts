@@ -26,6 +26,7 @@ const { PayloadSessionService } =
 const { createMcpServer } = await import("../src/server/mcp");
 const { mintCredential, authenticate, revokeTokens, checkClientRequest } =
   await import("../src/server/auth");
+const { registerFirstAdmin } = await import("../src/cms/first-admin");
 const payload = await cms();
 await (await import("../src/cms/seed")).seedAgents(payload);
 let checks = 0;
@@ -258,11 +259,10 @@ try {
       }),
     /管理员注册未开放/,
   );
-  process.env.HELLO_ADMIN_BOOTSTRAP = "true";
-  await payload.create({
-    collection: "admins",
-    overrideAccess: true,
-    data: adminData,
+  await registerFirstAdmin(payload, {
+    email: adminData.email,
+    password: adminData.password,
+    confirmPassword: adminData.password,
   });
   await assert.rejects(
     () =>
@@ -273,7 +273,6 @@ try {
       }),
     /管理员注册未开放/,
   );
-  process.env.HELLO_ADMIN_BOOTSTRAP = "false";
   const login = await payload.login({ collection: "admins", data: adminData });
   const cmsRows = await payload.find({
     collection: "greetings",

@@ -69,7 +69,7 @@ export const operationsCollections: CollectionConfig[] = [
     date("testedAt", "平台接受测试时间"), date("verifiedAt", "负责人确认收件时间"), date("heartbeatAt", "任务心跳"),
     text("leaseToken", "任务锁"), date("leaseUntil", "任务锁到期"), date("nextSendAt", "下次允许发送"), text("lastError", "安全错误码"),
   ], ["key"], "private"),
-  collection("safety-evidence", "受限证据", [number("caseId", "案件", true), text("excerpt", "最小证据片段"), text("digest", "内容摘要哈希", true), number("originalLength", "原始字符数"), date("purgedAt", "已清理"), text("purgeReason", "清理依据")], ["id"], "private"),
+  collection("safety-evidence", "受限证据", [number("caseId", "案件", true), text("excerpt", "最小证据片段"), text("digest", "内容摘要哈希", true), number("originalLength", "原始字符数"), text("provenance", "证据来源说明"), { name: "conversation", label: "触发对话快照", type: "json" }, date("purgedAt", "已清理"), text("purgeReason", "清理依据")], ["id"], "private"),
   collection("safety-audit", "运营审计", [text("actor", "操作人", true), text("event", "操作", true), text("target", "对象", true), text("reason", "理由", true), json("metadata", "不含正文的变更信息")], ["event", "actor", "target", "createdAt"], "audit"),
   collection("safety-enforcements", "处置执行状态", [
     { ...text("key", "对象键", true), unique: true }, text("owner", "所属设备", true), text("targetType", "对象类型", true),

@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useRef, useState, type ReactNode } from "react";
-import { operationLabels, recordURL } from "./admin-presentation";
+import { caseOperationLabel, operationLabels, recordURL } from "./admin-presentation";
 import "./admin-actions.css";
 
 type Row = { id: number; [key: string]: unknown };
@@ -96,16 +96,21 @@ export function CaseActions({ row, administrator, userId, admin }: { row: Row; a
   const [emergency, setEmergency] = useState<Row>();
   const [evidence, setEvidence] = useState<Record<string, unknown>>();
   const own = row.assignedTo === userId;
+  const ageReview = row.stage === "age_review";
   const actions: [string, string][] = [];
   if (administrator && row.retentionPurgedAt && row.retentionReviewNeeded) actions.push(["review_purged_restriction", "新建独立生效限制复核"]);
   if (!row.retentionPurgedAt && row.status !== "resolved" && (!row.assignedTo || own || administrator)) actions.push(["claim", "领取并受理"]);
   if (!row.retentionPurgedAt && (own || administrator)) actions.push(["review", "转交独立复核"]);
   if (!row.retentionPurgedAt && own && ["in_progress", "review"].includes(String(row.status))) {
-    if (row.source === "moderation" && ["input", "output"].includes(String(row.stage)) && !row.mediaId)
+    if (ageReview && administrator) {
+      actions.push(["permit_age_reverification", "批准发起一次新的本人核验"], ["maintain_age_restriction", "维持年龄限制"], ["restore_age_access", "直接解除年龄限制"]);
+    } else if (!ageReview && row.source === "moderation" && ["input", "output"].includes(String(row.stage)) && !row.mediaId)
       actions.push(["reject", "拒绝未生成请求并结案"]);
-    actions.push(["dismiss", "无需限制，结案"]);
-    if (row.turnId || row.mediaId) actions.push(["quarantine", "隔离已存内容并结案"], ["restore", "恢复原案件隔离的内容"]);
-    if (administrator) actions.push(["restrict", "限制该身份生成"], ["unrestrict", "解除原案件生成限制"]);
+    if (!ageReview) {
+      actions.push(["dismiss", "无需限制，结案"]);
+      if (row.turnId || row.mediaId) actions.push(["quarantine", "隔离已存内容并结案"], ["restore", "恢复原案件隔离的内容"]);
+      if (administrator) actions.push(["restrict", "限制该身份生成"], ["unrestrict", "解除原案件生成限制"]);
+    }
   }
   if (!row.retentionPurgedAt && own && row.status === "resolved") actions.push(["feedback", "向本人提供处理结果"]);
   if (administrator && !row.retentionPurgedAt) {
@@ -122,12 +127,18 @@ export function CaseActions({ row, administrator, userId, admin }: { row: Row; a
       setEvidence(undefined); setEvidence(await request(`cases/${row.id}/evidence`, body));
     }}><p>{!own && !administrator ? "请先领取案件，再按需查看证据。" : "访问须填写具体理由，访问记录会写入审计。"}</p></ActionPanel>
     {evidence && <div className="safety-evidence" role="status">{evidence.unavailable ? String(evidence.message) : <>
-      <h3>最小证据片段</h3><pre>{String(evidence.excerpt || "无可用正文")}</pre>
+      {evidence.provenance && <><h3>证据来源说明</h3><p>{String(evidence.provenance)}</p></>}
+      {evidence.conversation ? <>
+        <h3>触发对话快照（按时间顺序）</h3>
+        <ol>{((evidence.conversation as { messages?: { role: string; text: string; trigger?: boolean; truncated?: boolean; turnId?: number; timestamp?: string }[] }).messages || []).map((message, index) =>
+          <li key={index} className={message.trigger ? "safety-evidence__trigger" : undefined}><strong>{message.role === "user" ? "用户" : "助手"}{message.trigger ? "（触发消息）" : ""}</strong>{(message.turnId || message.timestamp) && <small>{message.turnId ? `轮次 #${message.turnId}` : ""}{message.turnId && message.timestamp ? " · " : ""}{message.timestamp || ""}</small>}<pre>{message.text}{message.truncated ? "\n[此消息已截断]" : ""}</pre></li>)}</ol>
+        {(() => { const truncation = (evidence.conversation as { truncation?: { omittedTurns?: number; anyTextTruncated?: boolean } }).truncation; return truncation && (truncation.omittedTurns || truncation.anyTextTruncated) ? <p>快照有界：更早的 {truncation.omittedTurns || 0} 个已完成轮次未纳入；过长文本会在对应消息中明确标注截断。</p> : null; })()}
+      </> : <><h3>原始证据片段</h3><p>{String(evidence.excerpt || "未保存证据片段")}</p><p>{String(evidence.transcriptUnavailable || "此证据不包含对话快照。")}</p></>}
       <small>原始字符数：{String(evidence.originalLength)} · SHA-256：{String(evidence.digest)}</small>
     </>}</div>}
     {actions.length > 0 && <ActionPanel title="案件处理" fields={[
       { key: "action", label: "处理动作", options: actions }, reason,
-      { key: "reply", label: "向本人反馈的结果", type: "textarea", min: 5, max: 1000, optional: true },
+      { key: "reply", label: "向本人反馈的结果", type: "textarea", min: 5, max: 1000, ...(ageReview ? {} : { optional: true }) },
       { key: "retainUntil", label: "留存至（指定/延长时必填，ISO 时间）", optional: true },
       { key: "holdReviewAt", label: "法律留存复核日（暂缓时必填，ISO 时间）", optional: true },
       { key: "severity", label: "受理时更新严重程度", optional: true, options: [["", "保持当前严重程度"], ...["normal", "high", "urgent"].map((key): [string, string] => [key, operationLabels[key]])] },
@@ -135,7 +146,7 @@ export function CaseActions({ row, administrator, userId, admin }: { row: Row; a
       const result = await request(`cases/${row.id}/action`, { ...body, revision: row.revision });
       if (body.action === "review_purged_restriction" && result.id !== row.id) window.location.assign(recordURL("safety-cases", result.id, admin));
       else window.location.reload();
-    }}><p>当前状态：{operationLabels[String(row.status)]}。{row.retentionPurgedAt ? row.retentionReviewNeeded ? "案件自由文本与证据已清理，但限制仍生效；管理员可新建独立复核案件，旧案不会重新写入自由文本。" : "案件自由文本与证据已清理；如需后续处置，必须新建独立案件。" : row.retentionReviewNeeded ? "本案件已明确标记为历史留存迁移待复核；有期限时须确认后才启动到期清理。" : ""}{row.legalHold ? ` 法律留存复核日：${String(row.holdReviewAt || "未设置（须立即补充）")}。` : ` 证据期限：${String(row.retainUntil || "待复核")}。`}处置与证据访问都沿用服务器权限校验；申诉和复核须由原处置人以外的人员完成。</p></ActionPanel>}
+    }}><p>当前状态：{operationLabels[String(row.status)]}。来源：{caseOperationLabel(String(row.source), String(row.stage))}。{row.retentionPurgedAt ? row.retentionReviewNeeded ? "案件自由文本与证据已清理，但限制仍生效；管理员可新建独立复核案件，旧案不会重新写入自由文本。" : "案件自由文本与证据已清理；如需后续处置，必须新建独立案件。" : row.retentionReviewNeeded ? "本案件已明确标记为历史留存迁移待复核；有期限时须确认后才启动到期清理。" : ""}{row.legalHold ? ` 法律留存复核日：${String(row.holdReviewAt || "未设置（须立即补充）")}。` : ` 证据期限：${String(row.retainUntil || "待复核")}。`}{ageReview ? " 年龄复核可选择允许本人重新核验、维持限制，或由系统管理员直接解除年龄限制。直接解除会记录人工核验来源，不冒充供应商结果，也不解除内容限制；必须填写理由和给本人的结果。" : "处置与证据访问都沿用服务器权限校验；申诉和复核须由原处置人以外的人员完成。"}</p></ActionPanel>}
   </div>;
 }
 

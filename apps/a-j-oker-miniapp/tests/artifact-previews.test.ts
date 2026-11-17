@@ -46,37 +46,39 @@ async function click(name: string) {
   });
 }
 
-it("多图只显示一张缩略图卡片，点开官方渲染的完整列表；关闭移除弹层", async () => {
+it("AJ 多图只选择一个输出且不改写原作品；点开、预览和关闭仍可用", async () => {
   const image = artifacts.find((item) => item.kind === "image")!;
+  const inputs = [image, { ...image, id: "second", title: "第二张图片" }];
+  const before = structuredClone(inputs);
   await act(async () => {
     renderer = create(
       createElement(Artifacts, {
         turnId: 1,
-        artifacts: [image, { ...image, id: "second", title: "第二张图片" }],
+        artifacts: inputs,
         responses: {},
       }),
     );
   });
+  expect(inputs).toEqual(before);
   expect(byClass("artifact-preview")).toHaveLength(1);
-  expect(byClass("artifact-thumbnail-image")).toHaveLength(2);
-  for (const thumbnail of byClass("artifact-thumbnail-image"))
-    expect(thumbnail.props.mode).toBe("aspectFit");
+  expect(byClass("artifact-thumbnail-image")).toHaveLength(1);
+  expect(byClass("artifact-thumbnail-image")[0]!.props.mode).toBe("aspectFit");
   expect(byClass("artifact-image")).toHaveLength(0);
-  expect(text()).toContain("2 张图片");
+  expect(text()).toContain(image.title);
+  expect(text()).not.toContain("第二张图片");
   await click("artifact-preview");
   expect(
     renderer.root.findAll((node) => String(node.type) === "root-portal"),
   ).toHaveLength(1);
-  expect(byClass("artifact-image")).toHaveLength(2);
-  for (const [index, full] of byClass("artifact-image").entries()) {
-    expect(full.props.mode).toBe("widthFix");
-    expect(full.props.src).toBe(byClass("artifact-thumbnail-image")[index]!.props.src);
-  }
-  expect(text()).toContain("第二张图片");
-  act(() => byClass("artifact-image")[1]!.props.onClick());
+  expect(byClass("artifact-image")).toHaveLength(1);
+  expect(byClass("artifact-image")[0]!.props.mode).toBe("widthFix");
+  expect(byClass("artifact-image")[0]!.props.src).toBe(
+    byClass("artifact-thumbnail-image")[0]!.props.src,
+  );
+  act(() => byClass("artifact-image")[0]!.props.onClick());
   expect(platform.previewImage).toHaveBeenCalledWith({
-    urls: ["/api/hello/artifact-image/1/second.png"],
-    current: "/api/hello/artifact-image/1/second.png",
+    urls: ["/api/hello/artifact-image/1/sun.png"],
+    current: "/api/hello/artifact-image/1/sun.png",
   });
   await click("detail-close");
   expect(
@@ -84,7 +86,7 @@ it("多图只显示一张缩略图卡片，点开官方渲染的完整列表；�
   ).toHaveLength(0);
   expect(byClass("artifact-image")).toHaveLength(0);
 });
-it("简单问答的键盘抬起时缩小面板，焦点字段滚动可见；关闭移除监听", async () => {
+it("表单控件原位显示，不创建弹层或键盘监听", async () => {
   vi.stubEnv("TARO_ENV", "weapp");
   const form = artifacts.find((item) => item.kind === "form")!;
   await act(async () => {
@@ -97,23 +99,35 @@ it("简单问答的键盘抬起时缩小面板，焦点字段滚动可见；关�
       }),
     );
   });
-  expect(text()).toContain("简单问答");
-  expect(renderer.root.findAllByType("textarea")).toHaveLength(0);
+  expect(text()).toContain(form.title);
+  expect(renderer.root.findAllByType("textarea")).toHaveLength(1);
+  expect(byClass("artifact-preview")).toHaveLength(0);
+  expect(byClass("detail-overlay")).toHaveLength(0);
+  expect(
+    renderer.root.findAll((node) => String(node.type) === "root-portal"),
+  ).toHaveLength(0);
+  expect(platform.onKeyboardHeightChange).not.toHaveBeenCalled();
+});
+it("普通作品底部面板响应键盘几何变化，关闭时移除监听", async () => {
+  vi.stubEnv("TARO_ENV", "weapp");
+  const page = artifacts.find((item) => item.kind === "page")!;
+  await act(async () => {
+    renderer = create(
+      createElement(Artifacts, {
+        turnId: 1,
+        artifacts: [page],
+        responses: {},
+      }),
+    );
+  });
   await click("artifact-preview");
   await act(async () => {
-    renderer.root.findByType("textarea").props.onFocus();
     platform.onKeyboardHeightChange.mock.lastCall![0]({ height: 320 });
-  });
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 25));
   });
   expect(byClass("detail-overlay")[0]!.props.style.bottom).toBe("320px");
   expect(
     parseFloat(byClass("detail-sheet")[0]!.props.style.height),
   ).toBeLessThan(480);
-  expect(byClass("detail-scroll")[0]!.props.scrollIntoView).toBe(
-    "artifact_field_situation",
-  );
   const listener = platform.onKeyboardHeightChange.mock.lastCall![0];
   await click("sheet-backdrop");
   expect(platform.offKeyboardHeightChange).toHaveBeenCalledWith(listener);

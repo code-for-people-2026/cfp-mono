@@ -279,6 +279,9 @@ importers:
       '@cfp/a-j-oker-contracts':
         specifier: workspace:*
         version: link:../../packages/a-j-oker-contracts
+      '@cfp/agent-a2a':
+        specifier: workspace:*
+        version: link:../../packages/agent-a2a
       '@cfp/base-chat-protocol':
         specifier: workspace:*
         version: link:../../packages/base-chat-protocol
@@ -376,18 +379,15 @@ importers:
 
   apps/a-j-oker-miniapp:
     dependencies:
-      '@a2ui/web_core':
-        specifier: 0.10.4
-        version: 0.10.4
       '@cfp/a-j-oker-contracts':
         specifier: workspace:*
         version: link:../../packages/a-j-oker-contracts
       '@cfp/base-chat-protocol':
         specifier: workspace:*
         version: link:../../packages/base-chat-protocol
-      '@copilotkit/a2ui-renderer':
-        specifier: 1.79.0
-        version: 1.79.0(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
+      '@cfp/chat-ui-taro':
+        specifier: workspace:*
+        version: link:../../packages/chat-ui-taro
       '@tarojs/components':
         specifier: 4.2.0
         version: 4.2.0(@tarojs/helper@4.2.0(@swc/helpers@0.5.15))(@types/react@18.3.31)(html-webpack-plugin@5.6.7(webpack@5.91.0(lightningcss@1.32.0)(postcss@8.5.15)))(postcss@8.5.15)(rollup@3.30.0)(webpack-chain@6.5.1)(webpack-dev-server@4.15.2(webpack@5.91.0(lightningcss@1.32.0)(postcss@8.5.15)))(webpack@5.91.0(lightningcss@1.32.0)(postcss@8.5.15))
@@ -424,9 +424,6 @@ importers:
       unique-names-generator:
         specifier: 4.7.1
         version: 4.7.1
-      zod:
-        specifier: ^3.25.76
-        version: 3.25.76
     devDependencies:
       '@babel/plugin-proposal-decorators':
         specifier: ^7.29.7
@@ -785,6 +782,34 @@ importers:
         specifier: ^4.0.15
         version: 4.1.8(@opentelemetry/api@1.9.0)(@types/node@22.20.5)(@vitest/coverage-v8@4.1.8)(jsdom@29.1.1)(vite@8.0.16(@types/node@22.20.5)(esbuild@0.28.1)(jiti@2.7.0)(less@4.5.1)(sass@1.101.0)(stylus@0.64.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  packages/agent-a2a:
+    dependencies:
+      '@a2a-js/sdk':
+        specifier: 1.3.0
+        version: 1.3.0(@bufbuild/protobuf@2.16.0)(@grpc/grpc-js@1.14.5)(express@5.2.1)(pg@8.20.0)
+    devDependencies:
+      '@cfp/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@cfp/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/node':
+        specifier: ^20.19.30
+        version: 20.19.43
+      '@vitest/coverage-v8':
+        specifier: ^4.0.15
+        version: 4.1.8(vitest@4.1.8)
+      eslint:
+        specifier: ^9.39.2
+        version: 9.39.4(jiti@2.7.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.15
+        version: 4.1.8(@opentelemetry/api@1.9.0)(@types/node@20.19.43)(@vitest/coverage-v8@4.1.8)(jsdom@29.1.1)(vite@8.0.16(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(less@4.5.1)(sass@1.101.0)(stylus@0.64.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
   packages/base-chat-protocol:
     dependencies:
       zod:
@@ -815,6 +840,58 @@ importers:
       vitest:
         specifier: ^4.0.15
         version: 4.1.8(@opentelemetry/api@1.9.0)(@types/node@22.20.5)(@vitest/coverage-v8@4.1.8)(jsdom@29.1.1)(vite@8.0.16(@types/node@22.20.5)(esbuild@0.28.1)(jiti@2.7.0)(less@4.5.1)(sass@1.101.0)(stylus@0.64.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/chat-ui-taro:
+    dependencies:
+      '@a2ui/web_core':
+        specifier: 0.10.4
+        version: 0.10.4
+      '@cfp/base-chat-protocol':
+        specifier: workspace:*
+        version: link:../base-chat-protocol
+      '@copilotkit/a2ui-renderer':
+        specifier: 1.79.0
+        version: 1.79.0(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@cfp/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@cfp/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@tarojs/components':
+        specifier: 4.2.0
+        version: 4.2.0(@tarojs/helper@4.2.0(@swc/helpers@0.5.15))(@types/react@18.3.31)(html-webpack-plugin@5.6.7(webpack@5.91.0(lightningcss@1.32.0)(postcss@8.5.15)))(postcss@8.5.15)(rollup@3.30.0)(webpack-chain@6.5.1)(webpack-dev-server@4.15.2(webpack@5.91.0(lightningcss@1.32.0)(postcss@8.5.15)))(webpack@5.91.0(lightningcss@1.32.0)(postcss@8.5.15))
+      '@types/node':
+        specifier: ^20.19.30
+        version: 20.19.43
+      '@types/react':
+        specifier: ^18.3.27
+        version: 18.3.31
+      '@types/react-test-renderer':
+        specifier: 18.3.1
+        version: 18.3.1
+      '@vitest/coverage-v8':
+        specifier: ^1.6.1
+        version: 1.6.1(vitest@1.6.1(@types/node@20.19.43)(jsdom@29.1.1)(less@4.5.1)(lightningcss@1.32.0)(sass@1.101.0)(stylus@0.64.0)(terser@5.48.0))
+      eslint:
+        specifier: ^9.39.2
+        version: 9.39.4(jiti@2.7.0)
+      react:
+        specifier: 18.2.0
+        version: 18.2.0
+      react-test-renderer:
+        specifier: 18.2.0
+        version: 18.2.0(react@18.2.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^1.6.1
+        version: 1.6.1(@types/node@20.19.43)(jsdom@29.1.1)(less@4.5.1)(lightningcss@1.32.0)(sass@1.101.0)(stylus@0.64.0)(terser@5.48.0)
 
   packages/kith-inn-contracts:
     dependencies:
@@ -947,6 +1024,35 @@ packages:
         optional: true
       express:
         optional: true
+
+  '@a2a-js/sdk@1.3.0':
+    resolution: {integrity: sha512-OpK4nygUnLKlpTFZlM2IrYu7f3c/B7c4u4Z14+vgMq24lEINTVCxH/BqZx+GL92rNf7CoBL5oTP5UhNsl75yyg==}
+    engines: {node: '>=20'}
+    hasBin: true
+    peerDependencies:
+      '@bufbuild/protobuf': ^2.10.2
+      '@grpc/grpc-js': ^1.11.0
+      better-sqlite3: ^12.0.0 || ^13.0.0
+      express: ^4.21.2 || ^5.1.0
+      kysely: ^0.28.17 || ^0.29.0
+      mysql2: ^3.0.0
+      pg: ^8.0.0
+    peerDependenciesMeta:
+      '@bufbuild/protobuf':
+        optional: true
+      '@grpc/grpc-js':
+        optional: true
+      better-sqlite3:
+        optional: true
+      express:
+        optional: true
+      kysely:
+        optional: true
+      mysql2:
+        optional: true
+      pg:
+        optional: true
+
 
   '@a2ui/web_core@0.10.4':
     resolution: {integrity: sha512-sahOUSKZIGv9ZtnHjfzWR8o/F1XfSTp4sQAX5/auSenQYBYDRaY0+vrZIkddc/IEzpXJob6cFJT2r5/mLzAvqg==}
@@ -10445,6 +10551,16 @@ snapshots:
       '@bufbuild/protobuf': 2.16.0
       '@grpc/grpc-js': 1.14.5
       express: 5.2.1
+
+  '@a2a-js/sdk@1.3.0(@bufbuild/protobuf@2.16.0)(@grpc/grpc-js@1.14.5)(express@5.2.1)(pg@8.20.0)':
+    dependencies:
+      jose: 6.2.12
+    optionalDependencies:
+      '@bufbuild/protobuf': 2.16.0
+      '@grpc/grpc-js': 1.14.5
+      express: 5.2.1
+      pg: 8.20.0
+
 
   '@a2ui/web_core@0.10.4':
     dependencies:

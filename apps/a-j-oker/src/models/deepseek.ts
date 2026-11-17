@@ -72,12 +72,86 @@ export function normalizedDeepSeekKey(value: string | undefined) {
   return key && /^[\x21-\x7E]+$/.test(key) ? key : undefined;
 }
 
+export type DeepSeekDiagnostic = {
+  responseStage?: "response_json" | "response_schema" | "envelope";
+  schemaPath?: string;
+  timeout: boolean;
+  transportCode?: string;
+  transportName?: string;
+};
+
 // Keep only a safe classification and HTTP status. Never retain provider bodies,
 // request headers, credentials, or an original exception as a cause.
 export class DeepSeekError extends Error {
-  constructor(message: string, readonly kind: "credential" | "http" | "transport" | "response", readonly status?: number) {
+  constructor(
+    message: string,
+    readonly kind: "credential" | "http" | "transport" | "response",
+    readonly status?: number,
+    readonly diagnostic: DeepSeekDiagnostic = { timeout: false },
+  ) {
     super(message);
   }
+}
+
+const safeTransportCodes = new Set([
+  "ECONNABORTED",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ENOTFOUND",
+  "ETIMEDOUT",
+  "UND_ERR_BODY_TIMEOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+]);
+const safeTransportNames = new Set(["AbortError", "TimeoutError", "TypeError"]);
+const timeoutTransportCodes = new Set([
+  "ECONNABORTED",
+  "ETIMEDOUT",
+  "UND_ERR_BODY_TIMEOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+]);
+
+function safeSchemaPath(error: z.ZodError): string | undefined {
+  for (const issue of error.issues) {
+    const path = issue.path
+      .map((segment) => (typeof segment === "number" ? `[${segment}]` : String(segment)))
+      .join(".");
+    if (path && /^[A-Za-z0-9_[\].-]{1,80}$/.test(path)) return path;
+  }
+  return undefined;
+}
+
+function safeTransportDiagnostic(error: unknown): DeepSeekDiagnostic {
+  let transportCode: string | undefined;
+  let transportName: string | undefined;
+  let sawTimeoutName = false;
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && current instanceof Error; depth++) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    const code = "code" in current
+      ? (current as { code?: unknown }).code
+      : undefined;
+    if (!transportCode && typeof code === "string" && safeTransportCodes.has(code))
+      transportCode = code;
+    if (!transportName && safeTransportNames.has(current.name))
+      transportName = current.name;
+    if (current.name === "TimeoutError") sawTimeoutName = true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return {
+    timeout:
+      sawTimeoutName
+      || (transportCode !== undefined && timeoutTransportCodes.has(transportCode)),
+    ...(transportCode ? { transportCode } : {}),
+    ...(transportName ? { transportName } : {}),
+  };
 }
 
 // 平台适配器和独立客户端共用协议层；这里不导入 ADK、CMS 或业务服务。
@@ -110,11 +184,38 @@ export async function completeDeepSeek(
       await response.body?.cancel().catch(() => {});
       throw new DeepSeekError(`DeepSeek 请求失败（HTTP ${response.status}）`, "http", response.status);
     }
-    const parsed = completionSchema.safeParse(await response.json());
-    if (!parsed.success) throw new DeepSeekError("DeepSeek 响应格式不符合约定", "response");
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) {
+        throw new DeepSeekError(
+          "DeepSeek 请求未完成，请检查网络或稍后重试",
+          "transport",
+          undefined,
+          safeTransportDiagnostic(error),
+        );
+      }
+      throw new DeepSeekError("DeepSeek 响应格式不符合约定", "response", undefined, {
+        responseStage: "response_json",
+        timeout: false,
+      });
+    }
+    const parsed = completionSchema.safeParse(body);
+    if (!parsed.success)
+      throw new DeepSeekError("DeepSeek 响应格式不符合约定", "response", undefined, {
+        responseStage: parsed.success ? "envelope" : "response_schema",
+        ...(safeSchemaPath(parsed.error) ? { schemaPath: safeSchemaPath(parsed.error) } : {}),
+        timeout: false,
+      });
     return parsed.data;
   } catch (error) {
     if (error instanceof DeepSeekError) throw error;
-    throw new DeepSeekError("DeepSeek 请求未完成，请检查网络或稍后重试", "transport");
+    throw new DeepSeekError(
+      "DeepSeek 请求未完成，请检查网络或稍后重试",
+      "transport",
+      undefined,
+      safeTransportDiagnostic(error),
+    );
   }
 }

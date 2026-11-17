@@ -3,15 +3,27 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   A2UI_VERSION,
-  toA2ui,
-  validateA2uiMessages,
   type A2uiMessage,
   type FormValues,
   type ClientEvent,
 } from "@cfp/base-chat-protocol";
 import { artifacts } from "../../../packages/base-chat-protocol/test/fixtures";
+import {
+  toAjA2ui,
+  validateAjA2uiMessages,
+} from "@cfp/a-j-oker-contracts";
+import { ArtifactUiProvider } from "@cfp/chat-ui-taro/artifacts";
 import type { HostProps } from "../src/chat/a2ui-feed";
-vi.mock("@tarojs/taro", () => ({ default: { previewImage: vi.fn() } }));
+vi.mock("@tarojs/taro", () => ({
+  default: {
+    previewImage: vi.fn(),
+    getWindowInfo: vi.fn(() => ({ windowHeight: 800 })),
+    onKeyboardHeightChange: vi.fn(),
+    offKeyboardHeightChange: vi.fn(),
+    onWindowResize: vi.fn(),
+    offWindowResize: vi.fn(),
+  },
+}));
 vi.mock("@tarojs/components", () => ({
   Button: "button",
   View: "view",
@@ -27,7 +39,10 @@ vi.mock("../src/chat/api", () => ({
 }));
 import { A2uiHost as NativeHost } from "../src/chat/a2ui-host";
 import { A2uiHost as WebHost } from "../src/chat/a2ui-host.h5";
-import { ArtifactState } from "../src/chat/artifact-components";
+import {
+  ArtifactState,
+  artifactUiConfig,
+} from "../src/chat/artifact-components";
 import { ArtifactPreview } from "../src/chat/artifact-preview";
 
 let renderer: ReactTestRenderer | undefined;
@@ -38,7 +53,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 const formMessages = () =>
-  toA2ui(
+  toAjA2ui(
     1,
     artifacts.filter((artifact) => artifact.kind === "form"),
   );
@@ -47,6 +62,12 @@ const text = () => JSON.stringify(renderer!.toJSON());
 const fields = () =>
   renderer!.root.findAll((node) =>
     ["input", "textarea"].includes(String(node.type)),
+  );
+const renderedImages = () =>
+  renderer!.root.findAll(
+    (node) =>
+      node.type === "image" &&
+      String(node.props.className).split(" ").includes("artifact-image"),
   );
 const submit = () =>
   renderer!.root
@@ -60,21 +81,25 @@ function view(
   compact = false,
   external = false,
 ) {
-  return createElement(Host, {
-    messages: validateA2uiMessages(messages),
-    renderSurface: (surface, content) =>
-      createElement(ArtifactState, {
-        key: surface.id,
-        surface,
-        external,
-        onAction,
-        initialValues: answers,
-        submitted: !!answers,
-        children: compact
-          ? createElement(ArtifactPreview, { surface, children: content })
-          : content,
-      }),
-  });
+  return createElement(
+    ArtifactUiProvider,
+    { config: artifactUiConfig },
+    createElement(Host, {
+      messages: validateAjA2uiMessages(messages),
+      renderSurface: (surface, content) =>
+        createElement(ArtifactState, {
+          key: surface.id,
+          surface,
+          external,
+          onAction,
+          initialValues: answers,
+          submitted: !!answers,
+          children: compact
+            ? createElement(ArtifactPreview, { surface, children: content })
+            : content,
+        }),
+    }),
+  );
 }
 for (const [platform, Host] of [
   ["weapp", NativeHost],
@@ -85,21 +110,50 @@ for (const [platform, Host] of [
       "完整作品保留 AI 文本来源，用户字段与系统说明不误标（external=%s）",
       async (external) => {
         vi.stubEnv("TARO_ENV", platform);
-        await act(async () => {
-          renderer = create(
-            view(
+        const generatedClasses = new Set<string>();
+        for (const artifact of artifacts) {
+          await act(async () => {
+            const element = view(
               Host,
-              toA2ui(1, artifacts),
+              toAjA2ui(1, [artifact]),
               undefined,
               undefined,
               false,
               external,
+            );
+            if (renderer) renderer.update(element);
+            else renderer = create(element);
+          });
+          expect(text()).toContain(artifact.title);
+          const generated = renderer!.root
+            .findAllByType("text")
+            .filter((node) => node.props["data-ai-generated"] === "true");
+          expect(generated.length).toBeGreaterThan(0);
+          for (const node of generated) {
+            for (const className of String(node.props.className).split(" "))
+              generatedClasses.add(className);
+            expect(node.props["data-ai-external"]).toBe(String(external));
+            expect(node.props.selectable).toBe(platform === "h5");
+            expect(typeof node.props.children).toBe("string");
+          }
+          expect(
+            fields().every(
+              (node) => node.props["data-ai-generated"] !== "true",
             ),
-          );
-        });
-        const generated = renderer!.root
-          .findAllByType("text")
-          .filter((node) => node.props["data-ai-generated"] === "true");
+          ).toBe(true);
+          if (artifact.kind === "image")
+            expect(renderedImages()[0]!.props.src).toBe(
+              "/private/fixture.png",
+            );
+          if (artifact.kind === "form") {
+            const note = renderer!.root
+              .findAllByType("text")
+              .find((node) =>
+                node.children.join("").startsWith("只在点击提交后发送"),
+              )!;
+            expect(note.props["data-ai-generated"]).toBe("false");
+          }
+        }
         for (const className of [
           "artifact-h3",
           "artifact-text",
@@ -107,27 +161,8 @@ for (const [platform, Host] of [
           "artifact-heading",
           "artifact-label",
           "artifact-caption",
-        ]) {
-          expect(
-            generated.some((node) =>
-              node.props.className.split(" ").includes(className),
-            ),
-          ).toBe(true);
-        }
-        for (const node of generated) {
-          expect(node.props["data-ai-external"]).toBe(String(external));
-          expect(node.props.selectable).toBe(platform === "h5");
-          expect(typeof node.props.children).toBe("string");
-        }
-        expect(
-          fields().every((node) => node.props["data-ai-generated"] !== "true"),
-        ).toBe(true);
-        const note = renderer!.root
-          .findAllByType("text")
-          .find((node) =>
-            node.children.join("").startsWith("只在点击提交后发送"),
-          )!;
-        expect(note.props["data-ai-generated"]).toBe("false");
+        ])
+          expect(generatedClasses.has(className)).toBe(true);
       },
     );
     it("紧凑表单点开填写，关闭/重开保留草稿和失败提示，确认后收起", async () => {
@@ -212,39 +247,42 @@ for (const [platform, Host] of [
         vi.stubGlobal("document", undefined);
         vi.stubGlobal("window", undefined);
       }
-      await act(async () => {
-        renderer = create(view(Host, toA2ui(1, artifacts)));
-      });
-      for (const artifact of artifacts)
+      for (const artifact of artifacts) {
+        await act(async () => {
+          const element = view(Host, toAjA2ui(1, [artifact]));
+          if (renderer) renderer.update(element);
+          else renderer = create(element);
+        });
         expect(text()).toContain(artifact.title);
-      expect(renderer!.root.findAllByType("image")[0]!.props.src).toBe(
-        "/private/fixture.png",
-      );
-      expect(fields()).toHaveLength(4);
-      if (platform === "weapp") {
-        const types = new Set(
-          renderer!.root
-            .findAll((node) => typeof node.type === "string")
-            .map((node) => node.type),
-        );
-        expect(
-          [...types].every((type) =>
-            [
-              "view",
-              "text",
-              "image",
-              "scroll-view",
-              "input",
-              "textarea",
-              "button",
-            ].includes(String(type)),
-          ),
-        ).toBe(true);
-      } else
-        expect(
-          renderer!.root.findAll((node) => node.props["data-surface-id"])
-            .length,
-        ).toBe(5);
+        if (artifact.kind === "image")
+          expect(renderedImages()[0]!.props.src).toBe(
+            "/private/fixture.png",
+          );
+        expect(fields()).toHaveLength(artifact.kind === "form" ? 4 : 0);
+        if (platform === "weapp") {
+          const types = new Set(
+            renderer!.root
+              .findAll((node) => typeof node.type === "string")
+              .map((node) => node.type),
+          );
+          expect(
+            [...types].every((type) =>
+              [
+                "view",
+                "text",
+                "image",
+                "scroll-view",
+                "input",
+                "textarea",
+                "button",
+              ].includes(String(type)),
+            ),
+          ).toBe(true);
+        } else
+          expect(
+            renderer!.root.findAll((node) => node.props["data-surface-id"]),
+          ).toHaveLength(1);
+      }
     });
     it("逐条消息、零值与删除由真实数据模型处理，组件原位更新", async () => {
       let messages: A2uiMessage[] = [];
@@ -403,7 +441,7 @@ for (const [platform, Host] of [
         fields()[0]!.props.onInput({ detail: { value: "上一段私有草稿" } }),
       );
       await act(async () => {
-        renderer!.update(view(Host, toA2ui(2, [artifacts[4]!]), onAction));
+        renderer!.update(view(Host, toAjA2ui(2, [artifacts[4]!]), onAction));
       });
       expect(fields()[0]!.props.value).toBe("");
       expect(text()).not.toContain("上一段私有草稿");

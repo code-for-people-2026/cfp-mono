@@ -1,7 +1,9 @@
 import { z } from "zod";
-import { CATALOG_ID, componentSchema } from "./a2ui";
+import { DEFAULT_CATALOG_ID, componentSchema } from "./a2ui";
 
-export function a2uiCatalog() {
+export function a2uiCatalog(
+  options: { id?: string; title?: string } = {},
+) {
   const anyComponent = z.toJSONSchema(componentSchema, {
     target: "draft-2020-12",
   });
@@ -19,8 +21,8 @@ export function a2uiCatalog() {
   }
   return {
     $schema: "https://json-schema.org/draft/2020-12/schema",
-    $id: CATALOG_ID,
-    title: "阿 J 先生 · 回应作品目录 v1",
+    $id: options.id ?? DEFAULT_CATALOG_ID,
+    title: options.title ?? "CFP shared presentation catalog v1",
     $defs: {
       anyComponent,
       theme: { type: "object", properties: {}, additionalProperties: false },

@@ -22,13 +22,39 @@ import { ChatComposer, type ImageSource } from "../../chat/composer";
 import { ChatDock } from "../../chat/dock";
 import { Artifacts, LiveArtifacts } from "../../chat/artifacts";
 import { EvidenceCard } from "../../chat/evidence-card";
+import { DancingLoader } from "../../chat/dancing-loader";
+import { resolveExpertAvatarSource } from "../../chat/expert-avatars";
+import { LoadingCarousel } from "../../chat/loading-carousel";
+import {
+  formSubmissionStates,
+  isFormOnlyInput,
+} from "../../chat/form-history";
+import {
+  HandoffPreamble,
+  interimHandoffPreamble,
+} from "../../chat/handoff-preamble";
+import {
+  activeSpecialistTurn,
+  specialistFormStateForTurn,
+  specialistPresentationForTurn,
+} from "../../chat/specialist-card";
+import {
+  clearSubmissionFailure,
+  readSubmissionFailure,
+  rememberSubmissionFailure,
+} from "../../chat/submission-failures";
+import { PresentationFrame } from "@cfp/chat-ui-taro/artifacts";
 import { CopyMessage, MessageText } from "../../chat/message-text";
 import { ChatIcon } from "../../chat/icon";
 import {
   type ClientEvent,
-  type FormValues,
   type RunProgress,
 } from "@cfp/base-chat-protocol";
+import {
+  createRecoverableSubmitController,
+  type RecoverableSubmission,
+  type RecoverableSubmitController,
+} from "@cfp/chat-ui-taro/recoverable-submit";
 import mascot from "../../assets/aj-mascot.png";
 import {
   canSend,
@@ -43,16 +69,19 @@ import {
 } from "../../chat/model";
 
 const selectionKey = `hello-active-session:${HELLO_API_ORIGIN}`;
-type PendingSubmission = {
-  sessionId: number;
-  requestId: string;
+type SubmitRequest = {
   mode: Exclude<Mode, "external">;
   input: Input;
 };
+type PendingSubmission = RecoverableSubmission<number, SubmitRequest>;
+type SubmissionController = RecoverableSubmitController<
+  number,
+  SubmitRequest,
+  Turn
+>;
 type Draft = {
   text: string;
   attachments: Attachment[];
-  submission?: PendingSubmission;
 };
 const h5 = process.env.TARO_ENV === "h5";
 function Button(props: ButtonProps) {
@@ -73,6 +102,7 @@ const suggestions = [
 
 export default function Chat() {
   const [visible, setVisible] = useState(true);
+  const pageHidden = useRef(false);
   const [profile, setProfile] = useState<UserProfile>();
   const [avatarSource, setAvatarSource] = useState<string>();
   const [age, setAge] = useState<AgeStatus>();
@@ -97,9 +127,9 @@ export default function Chat() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const mode = useChatMode();
   const settingsNavigation = useRef(false);
-  const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<RunProgress>();
+  const [loadingRun, setLoadingRun] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -112,16 +142,55 @@ export default function Chat() {
   const pageTop = useRef(0);
   const scrollRevision = useRef(0);
   const historyVersion = useRef(0);
+  const scopeVersion = useRef(0);
+  const pageAlive = useRef(true);
   const sendLock = useRef(false);
-  // 只保留待确认提交的业务标识，不保留 BYOK 密钥。网络错误不代表服务端没有保存。
-  const submission = useRef<PendingSubmission>();
+  // The page keeps only this in-memory controller state; no keys are retained.
+  const submissions = useRef<SubmissionController>();
+  if (!submissions.current) {
+    submissions.current = createRecoverableSubmitController<
+      number,
+      SubmitRequest,
+      Turn
+    >({
+      createRequestId: requestId,
+      fingerprint: (request) => JSON.stringify(request),
+      lookup: async (submission: PendingSubmission) =>
+        (await api.getSubmission(submission.scope, submission.requestId)).turn ??
+        undefined,
+      classify: (turn) =>
+        turn === undefined
+          ? "missing"
+          : turn.status === "completed"
+            ? "completed"
+            : turn.status,
+      send: async (submission) => {
+        const version = scopeVersion.current;
+        return api.generate(
+          submission.scope,
+          submission.requestId,
+          submission.request.mode,
+          submission.request.input,
+          undefined,
+          (next) => {
+            if (
+              pageAlive.current &&
+              version === scopeVersion.current &&
+              activeSession.current === submission.scope
+            )
+              setProgress(next);
+          },
+        );
+      },
+    });
+  }
   const disabled =
     busy || uploading || loading || memoryBusy || identityExpired || !age?.allowed || !age.expiresAt || Date.parse(age.expiresAt) <= Date.now();
   const ready = canSend(
     text,
     attachments,
     mode,
-    apiKey,
+    "",
     !!settings?.platformConfigured,
     disabled || historyFailed || !consentCurrent(privacy) || memory?.level === "empty",
   );
@@ -129,7 +198,7 @@ export default function Chat() {
     "表单",
     [],
     mode,
-    apiKey,
+    "",
     !!settings?.platformConfigured,
     disabled || historyFailed || !consentCurrent(privacy) || memory?.level === "empty",
   );
@@ -156,6 +225,9 @@ export default function Chat() {
     setError(
       value instanceof Error ? value.message : "暂时没有完成，请稍后重试",
     );
+  }
+  function failureMessage(value: unknown, fallback: string) {
+    return value instanceof Error ? value.message : fallback;
   }
   function recoveryFailed(value: unknown) {
     if (value instanceof api.IdentityExpiredError) setIdentityExpired(true);
@@ -200,17 +272,17 @@ export default function Chat() {
     drafts.current.set(activeSession.current || 0, {
       text,
       attachments,
-      submission: submission.current,
     });
   }
   async function switchSession(id: number, fresh = false) {
     stashDraft();
+    scopeVersion.current++;
     historyVersion.current++;
     rememberSelection(id);
     const draft = drafts.current.get(id);
     setText(draft?.text || "");
     setAttachments(draft?.attachments || []);
-    submission.current = draft?.submission;
+    const pendingSubmission = submissions.current?.pendingFor(id);
     setHistory([]);
     setImages({});
     setMemory(undefined);
@@ -218,9 +290,15 @@ export default function Chat() {
     setPending(undefined);
     setMemoryOpen(false);
     setNavigationOpen(false);
+    const previousFailure = submissions.current?.failureFor(id);
+    const recalledFailure = readSubmissionFailure(id);
     setError(
-      draft?.submission
-        ? "这段对话还有一次发送等待确认，可以先确认上次发送。"
+      previousFailure?.error instanceof Error
+        ? previousFailure.error.message
+        : pendingSubmission
+          ? "这段对话还有一次发送等待确认，可以先确认上次发送。"
+        : recalledFailure
+          ? recalledFailure.message
         : "",
     );
     setHistoryFailed(false);
@@ -265,7 +343,6 @@ export default function Chat() {
         drafts.current.set(session.id, {
           text,
           attachments,
-          submission: submission.current,
         });
       await switchSession(session.id, true);
     } catch (value) {
@@ -275,9 +352,12 @@ export default function Chat() {
       sendLock.current = false;
     }
   }
-  async function refreshSessions() {
+  async function refreshSessions(version = scopeVersion.current) {
+    if (!pageAlive.current || version !== scopeVersion.current) return;
     try {
-      setSessions(await api.getSessions());
+      const next = await api.getSessions();
+      if (pageAlive.current && version === scopeVersion.current)
+        setSessions(next);
     } catch {
       /* 不把已保存的回复误报成失败 */
     }
@@ -325,6 +405,13 @@ export default function Chat() {
           )[0];
         rememberSelection(selected.id);
         await readHistory(selected.id);
+        const recalledFailure = readSubmissionFailure(selected.id);
+        if (
+          version === bootVersion.current &&
+          recalledFailure &&
+          !submissions.current?.pendingFor(selected.id)
+        )
+          setError(recalledFailure.message);
       }
       if (version === bootVersion.current) setHistoryFailed(false);
     } catch (value) {
@@ -342,7 +429,8 @@ export default function Chat() {
     setAgeOpen(true);
     // 防止旧身份的图片异步结果混入新页面。
     historyVersion.current++;
-    submission.current = undefined;
+    scopeVersion.current++;
+    submissions.current?.reset();
     rememberSelection(undefined);
     drafts.current.clear();
     setSessions([]);
@@ -355,9 +443,11 @@ export default function Chat() {
     setInputMode("voice");
     setAttachments([]);
     setPending(undefined);
+    setProgress(undefined);
+    setBusy(false);
+    sendLock.current = false;
     setMemory(undefined);
     setMemoryOpen(false);
-    setApiKey("");
     setIdentityExpired(false);
     setPrivacy(undefined);
   }
@@ -385,20 +475,29 @@ export default function Chat() {
     }
   }
   async function checkSubmission() {
-    const current = submission.current;
+    const current =
+      sessionId === undefined
+        ? undefined
+        : submissions.current?.pendingFor(sessionId);
     if (!current || disabled || sendLock.current) return;
     sendLock.current = true;
     setBusy(true);
+    setLoadingRun((current) => current + 1);
+    const version = scopeVersion.current;
+    const previousFailure = submissions.current?.failureFor(current.scope);
     try {
-      const { turn } = await api.getSubmission(
-        current.sessionId,
-        current.requestId,
-      );
-      if (turn?.status === "completed") {
-        submission.current = undefined;
+      const outcome = await submissions.current!.check(current.scope);
+      if (
+        !pageAlive.current ||
+        version !== scopeVersion.current ||
+        activeSession.current !== current.scope
+      )
+        return;
+      if (outcome.type === "completed") {
+        const turn = outcome.result;
         if (
-          current.mode === mode &&
-          JSON.stringify(current.input) ===
+          current.request.mode === mode &&
+          JSON.stringify(current.request.input) ===
             JSON.stringify({
               text: text.trim(),
               mediaIds: attachments.map((item) => item.id),
@@ -412,30 +511,45 @@ export default function Chat() {
           turn,
         ]);
         setError("已确认上次回复保存成功，无需再次发送。");
-        await readHistory(current.sessionId);
-        await refreshSessions();
-      } else if (turn?.status === "failed") {
-        submission.current = undefined;
+        await readHistory(current.scope);
+        await refreshSessions(version);
+        clearSubmissionFailure(current.scope);
+      } else if (outcome.type === "failed") {
         setError("上次生成已确认失败，草稿保留；可以重新发送。");
-      } else {
+      } else if (outcome.type === "running") {
         setError(
-          turn
-            ? "上次提交仍在处理，请稍后再确认；不会重复生成。"
-            : "尚未找到上次提交，可用原请求重试发送。",
+          "上次提交仍在处理，请稍后再确认；不会重复生成。",
         );
+      } else if (outcome.type === "missing") {
+        setError(
+          failureMessage(
+            outcome.error,
+            "尚未找到上次提交，可用原请求重试发送。",
+          ),
+        );
+      } else if (outcome.type === "error") {
+        if (previousFailure?.error instanceof Error)
+          setError(previousFailure.error.message);
+        else problem(outcome.error);
       }
     } catch (value) {
       problem(value);
     } finally {
-      setBusy(false);
-      sendLock.current = false;
+      if (pageAlive.current && version === scopeVersion.current) {
+        setBusy(false);
+        sendLock.current = false;
+      }
     }
   }
   useEffect(() => {
+    pageAlive.current = true;
     void boot();
     return () => {
+      pageAlive.current = false;
       bootVersion.current++;
       historyVersion.current++;
+      scopeVersion.current++;
+      submissions.current?.reset();
       scrollRevision.current++;
     };
   }, []);
@@ -459,9 +573,13 @@ export default function Chat() {
     const cleanupCopy = h5 ? installAiCopyLabels() : undefined;
     return () => { Taro.eventCenter.off(privacyChangedEvent, changed); cleanupCopy?.(); };
   }, []);
-  useDidHide(() => setVisible(false));
+  useDidHide(() => { pageHidden.current = true; setVisible(false); });
   useDidShow(() => {
     setVisible(true);
+    if (pageHidden.current && !privacyDirty.current && age?.loggedIn && !age.allowed) {
+      pageHidden.current = false;
+      void api.getAge().then((nextAge) => { setAge(nextAge); setAgeOpen(!nextAge.allowed || !consentCurrent(privacy)); }, problem);
+    } else pageHidden.current = false;
     if (privacyDirty.current) { privacyDirty.current = false; void boot(); }
     else if (age?.expiresAt && Date.parse(age.expiresAt) <= Date.now()) { setAge({ ...age, allowed: false, state: "expired" }); setAgeOpen(true); }
   });
@@ -495,8 +613,14 @@ export default function Chat() {
       !(formInput ? formReady : ready) ||
       mode === "external" ||
       sendLock.current
-    )
+    ) {
+      // ArtifactState treats a resolved callback as accepted. A form can race
+      // with an age/privacy change or another send after its button rendered,
+      // so unavailable form callbacks must reject instead of silently no-oping.
+      if (formInput)
+        throw new Error("表单当前无法提交，请确认页面仍可用后重试");
       return;
+    }
     sendLock.current = true;
     followLatest.current = true;
     scrollRevision.current++;
@@ -505,10 +629,11 @@ export default function Chat() {
       text: draft.text,
       mediaIds: draft.images.map((item) => item.id),
     };
-    const key = apiKey;
-    setApiKey("");
     setBusy(true);
-    setPending(formInput ? { text: formInput.text, images: [] } : draft);
+    // A form submission is represented by its original expert card. Showing a
+    // transient user bubble would repeat the server-generated summary before
+    // acceptance is known.
+    setPending(formInput ? undefined : draft);
     setProgress(undefined);
     if (!formInput) {
       setText("");
@@ -516,72 +641,105 @@ export default function Chat() {
     }
     setError("");
     let id = sessionId;
-    let saved = false;
+    const operationVersion = scopeVersion.current;
+    let savedMessage: string | undefined;
     let formFailure: Error | undefined;
     try {
       if (!id) {
         const session = await api.newSession();
+        // Creating a session crosses the identity/page boundary. Never attach
+        // the result to a reset identity (or an unmounted page), and never
+        // start generation for that stale operation.
+        if (!pageAlive.current || operationVersion !== scopeVersion.current) {
+          if (formInput)
+            throw new Error("表单提交已失效，请重新打开后确认");
+          return;
+        }
         id = session.id;
         rememberSelection(id);
         setSessions((rows) => [...rows, session]);
       }
-      const previous = submission.current;
-      const retry =
-        previous?.sessionId === id &&
-        previous.mode === mode &&
-        JSON.stringify(previous.input) === JSON.stringify(input);
-      const current = retry
-        ? previous
-        : { sessionId: id, requestId: requestId(), mode, input };
-      submission.current = current;
-      let result: Turn | undefined;
-      if (retry) {
-        const status = await api.getSubmission(id, current.requestId);
-        if (status.turn?.status === "completed") result = status.turn;
-        if (status.turn?.status === "running")
-          throw new Error("上次提交仍在处理，请稍后再确认；不会重复生成。");
-        // 只有服务端明确失败才允许新的一轮；查询失败或暂未找到都不能随意换编号。
-        if (status.turn?.status === "failed") current.requestId = requestId();
+      const outcome = await submissions.current!.submit(id, { mode, input });
+      if (
+        !pageAlive.current ||
+        operationVersion !== scopeVersion.current ||
+        activeSession.current !== id
+      ) {
+        if (formInput) {
+          formFailure = new Error("表单提交已失效，请重新打开后确认");
+          throw formFailure;
+        }
+        return;
       }
-      result ||= await api.generate(
-        id,
-        current.requestId,
-        mode,
-        input,
-        key,
-        setProgress,
-      );
-      saved = true;
-      submission.current = undefined;
-      // 保存成功与刷新成功是两件事，不能因随后读取失败诱导用户重复发送。
-      setHistory((current) => [
-        ...current.filter((row) => row.id !== result.id),
-        result,
-      ]);
-      await readHistory(id);
-    } catch (value) {
-      if (value instanceof api.IdentityExpiredError) setIdentityExpired(true);
-      if (saved) {
-        setError(
-          "回复已保存，记录暂时刷新失败，请稍后重新打开；无需再次发送。",
-        );
+      if (outcome.type === "completed") {
+        const result = outcome.result;
+        savedMessage = outcome.recovered
+          ? "已确认上次回复保存成功，无需再次发送。"
+          : "回复已保存，记录暂时刷新失败，请稍后重新打开；无需再次发送。";
+        // The controller has confirmed persistence; a later history-read
+        // failure must not put the submitted draft back or suggest resending.
+        setHistory((current) => [
+          ...current.filter((row) => row.id !== result.id),
+          result,
+        ]);
+        await readHistory(id);
+        clearSubmissionFailure(id);
+      } else if (outcome.type === "failed") {
+        if (outcome.running)
+          setError("上次提交仍在处理，请稍后再确认；不会重复生成。");
+        else {
+          problem(outcome.error);
+          const failedSubmission = submissions.current?.pendingFor(id);
+          if (failedSubmission && outcome.error !== undefined)
+            rememberSubmissionFailure(
+              id,
+              failedSubmission.requestId,
+              outcome.error,
+            );
+        }
+        if (formInput)
+          formFailure =
+            outcome.running
+              ? new Error("上次提交仍在处理，请稍后再确认；不会重复生成。")
+              : outcome.error instanceof Error
+                ? outcome.error
+                : new Error("表单尚未确认提交，请稍后重试");
+        if (!formInput) {
+          setText(draft.text);
+          setAttachments(draft.images);
+        }
+        if (id) await readHistory(id).catch(recoveryFailed);
       } else {
-        const current = submission.current;
-        const status =
-          current &&
-          (await api
-            .getSubmission(current.sessionId, current.requestId)
-            .catch(recoveryFailed));
-        if (status?.turn?.status === "completed") {
-          const turn = status.turn;
-          submission.current = undefined;
-          setHistory((rows) => [
-            ...rows.filter((row) => row.id !== turn.id),
-            turn,
-          ]);
-          setError("已确认上次回复保存成功，无需再次发送。");
+        const message =
+          outcome.type === "busy"
+            ? "已有提交正在处理，请稍后确认"
+            : outcome.type === "stale"
+              ? "提交作用域已变化，请重新打开后确认"
+              : "尚未确认表单已保存，请稍后重试";
+        setError(message);
+        if (formInput) formFailure = new Error(message);
+        if (!formInput) {
+          setText(draft.text);
+          setAttachments(draft.images);
+        }
+      }
+    } catch (value) {
+      const staleScope =
+        !pageAlive.current ||
+        operationVersion !== scopeVersion.current ||
+        (id !== undefined && activeSession.current !== id);
+      if (staleScope) {
+        if (formInput)
+          formFailure =
+            value instanceof Error
+              ? value
+              : new Error("表单提交已失效，请重新打开后确认");
+      } else {
+        if (value instanceof api.IdentityExpiredError)
+          setIdentityExpired(true);
+        if (savedMessage) {
+          setError(savedMessage);
         } else {
-          if (status?.turn?.status === "failed") submission.current = undefined;
           problem(value);
           if (formInput)
             formFailure =
@@ -592,50 +750,87 @@ export default function Chat() {
             setText(draft.text);
             setAttachments(draft.images);
           }
+          if (id) await readHistory(id).catch(recoveryFailed);
         }
-        if (id) await readHistory(id).catch(recoveryFailed);
       }
     } finally {
-      await refreshSessions();
-      setPending(undefined);
-      setProgress(undefined);
-      setBusy(false);
-      sendLock.current = false;
+      if (pageAlive.current && operationVersion === scopeVersion.current)
+        await refreshSessions(operationVersion);
+      if (pageAlive.current && operationVersion === scopeVersion.current) {
+        setPending(undefined);
+        setProgress(undefined);
+        setBusy(false);
+        sendLock.current = false;
+      }
     }
     // A form's error must be visible inside its sheet, not behind the overlay.
     // Confirmed saves (including recovered responses) never become retry errors.
     if (formFailure) throw formFailure;
   }
-  const formResponses = Object.fromEntries(
-    history
-      .filter((row) => row.status === "completed" && row.input.formResponse)
-      .map((row) => {
-        const response = row.input.formResponse!;
-        return [
-          `turn_${response.turnId}_${response.artifactId}`,
-          response.values,
-        ];
-      }),
-  ) as Record<string, FormValues>;
+  const { responses: formResponses, draftResponses } =
+    formSubmissionStates(history);
+  const activeSpecialist = activeSpecialistTurn(history);
+  const interimPreamble = interimHandoffPreamble(history, progress);
+  const returnToAj = async (taskId: string) => {
+    try {
+      await send({
+        text: "",
+        mediaIds: [],
+        action: { type: "return_to_coordinator", taskId },
+      });
+    } catch (value) {
+      problem(value);
+    }
+  };
   async function resumeImage(row: Turn) {
     if (disabled || !sessionId) return;
     if (row.mode !== "platform") {
       setError("当前仅支持继续生成平台模式的图片，原有记录仍可查看"); return;
     }
-    setApiKey(""); setBusy(true); setError("");
+    const version = scopeVersion.current;
+    const scope = sessionId;
+    setBusy(true); setError("");
+    setLoadingRun((current) => current + 1);
     setProgress({ text: "", messages: [], step: "正在继续取图…" });
     try {
-      await api.resumeImage(row.id, requestId(), undefined, setProgress);
-      await readHistory(sessionId);
+      await api.resumeImage(row.id, requestId(), undefined, (next) => {
+        if (
+          pageAlive.current &&
+          version === scopeVersion.current &&
+          activeSession.current === scope
+        )
+          setProgress(next);
+      });
+      if (
+        pageAlive.current &&
+        version === scopeVersion.current &&
+        activeSession.current === scope
+      )
+        await readHistory(scope);
     } catch (value) {
-      problem(value);
-      await readHistory(sessionId).catch(() => undefined);
-    } finally { setProgress(undefined); setBusy(false); }
+      if (pageAlive.current && version === scopeVersion.current) {
+        problem(value);
+        await readHistory(scope).catch(() => undefined);
+      }
+    } finally {
+      if (pageAlive.current && version === scopeVersion.current) {
+        setProgress(undefined);
+        setBusy(false);
+      }
+    }
   }
   async function submitForm(event: ClientEvent) {
     if (!consentCurrent(privacy) || !privacy?.consent?.sensitive) { void openPrivacy("authorization"); throw new Error("请先单独同意情绪练习的敏感信息处理"); }
     const match = event.action.surfaceId.match(/^turn_(\d+)_(.+)$/);
     if (!match) throw new Error("表单来源无效");
+    const source = history.find((row) => row.id === Number(match[1]));
+    const specialistFormState = source
+      ? specialistFormStateForTurn(history, source)
+      : undefined;
+    if (specialistFormState === "replaced")
+      throw new Error("专家已发送更新的表单，请填写最新一份");
+    if (specialistFormState === "expired")
+      throw new Error("专家任务已结束，该表单不能再提交");
     await send({
       text: "提交练习表单",
       mediaIds: [],
@@ -643,6 +838,7 @@ export default function Chat() {
         turnId: Number(match[1]),
         artifactId: match[2],
         values: event.action.context.values,
+        presentation: event.action.context.form,
       },
     });
   }
@@ -651,7 +847,6 @@ export default function Chat() {
     if (busy || uploading || memoryBusy || sendLock.current || settingsNavigation.current) return;
     settingsNavigation.current = true;
     setNavigationOpen(false);
-    setApiKey("");
     try {
       await Taro.navigateTo({ url: "/pages/settings/index" });
     } catch (value) {
@@ -660,10 +855,6 @@ export default function Chat() {
       settingsNavigation.current = false;
     }
   }
-  useEffect(() => {
-    setApiKey("");
-  }, [mode]);
-
   return (
     <View className={h5 ? "h5-shell" : "native-shell"}>
       <InteractionGuard enabled={visible && !loading && !!age?.allowed && consentCurrent(privacy)} revision={history.length} onUnavailable={() => { void api.getAge().then((s) => { setAge(s); if (!s.allowed) setAgeOpen(true); }).catch(() => {}); }} />
@@ -737,79 +928,147 @@ export default function Chat() {
                 阿 J 先生正在翻看我们聊过的日常…
               </Text>
             )}
-            {history.map((row) => (
+            {history.map((row, rowIndex) => (
               <View className="turn" key={row.id}>
-                <View className="message user-message">
-                  <View className="user-message-main">
-                    <View className="bubble user-bubble">
-                      {row.input.text && (
-                        <MessageText>{row.input.text}</MessageText>
-                      )}
-                      {row.input.mediaIds.length > 0 && (
-                        <View className="bubble-images">
-                          {row.input.mediaIds.map((id) =>
-                            images[id] ? (
-                              <Image
-                                key={id}
-                                className="message-image"
-                                src={images[id]!}
-                                mode="aspectFill"
-                                onError={() =>
-                                  setImages((current) => ({
-                                    ...current,
-                                    [id]: null,
-                                  }))
-                                }
-                                onClick={() =>
-                                  Taro.previewImage({
-                                    urls: row.input.mediaIds
-                                      .map((value) => images[value])
-                                      .filter(
-                                        (source): source is string => !!source,
-                                      ),
-                                    current: images[id]!,
-                                  })
-                                }
-                              />
-                            ) : (
-                              <Text key={id} className="image-placeholder">
-                                {images[id] === null
-                                  ? "图片暂不可用"
-                                  : "图片加载中…"}
-                              </Text>
-                            ),
-                          )}
-                        </View>
-                      )}
+                {!isFormOnlyInput(row.input) && (
+                  <View className="message user-message">
+                    <View className="user-message-main">
+                      <View className="bubble user-bubble">
+                        {(row.input.text || row.input.action) && (
+                          <MessageText>{row.input.action ? "回到阿 J" : row.input.text}</MessageText>
+                        )}
+                        {row.input.mediaIds.length > 0 && (
+                          <View className="bubble-images">
+                            {row.input.mediaIds.map((id) =>
+                              images[id] ? (
+                                <Image
+                                  key={id}
+                                  className="message-image"
+                                  src={images[id]!}
+                                  mode="aspectFill"
+                                  onError={() =>
+                                    setImages((current) => ({
+                                      ...current,
+                                      [id]: null,
+                                    }))
+                                  }
+                                  onClick={() =>
+                                    Taro.previewImage({
+                                      urls: row.input.mediaIds
+                                        .map((value) => images[value])
+                                        .filter(
+                                          (source): source is string => !!source,
+                                        ),
+                                      current: images[id]!,
+                                    })
+                                  }
+                                />
+                              ) : (
+                                <Text key={id} className="image-placeholder">
+                                  {images[id] === null
+                                    ? "图片暂不可用"
+                                    : "图片加载中…"}
+                                </Text>
+                              ),
+                            )}
+                          </View>
+                        )}
+                      </View>
                     </View>
                   </View>
-                </View>
+                )}
                 <View className="message assistant-message">
                   <View className="message-main">
                     <View
                       data-ai-external={row.mode === "external" ? "true" : "false"}
                       className={`bubble assistant-bubble ${row.status === "failed" ? "failed-bubble" : ""}`}
                     >
-                      <MessageText aiGenerated={row.status === "completed"} external={row.mode === "external"}>
-                        {row.status === "completed"
-                          ? row.greeting
-                          : row.status === "failed"
-                            ? row.error || "这一次没有完成，请查看下方提示。"
-                            : "这一轮尚未完成，请先确认上次发送；若长时间未完成，请联系开发者。"}
-                      </MessageText>
-                      {row.status === "completed" && (
-                        <Artifacts
-                          external={row.mode === "external"}
-                          turnId={row.id}
-                          artifacts={row.artifacts}
-                          responses={formResponses}
-                          disabled={!formReady}
-                          onAction={submitForm}
-                        />
-                      )}
-                      {row.status === "completed" && row.association && (
-                        <EvidenceCard turn={row} />
-                      )}
+                      {(() => {
+                        const origin = specialistPresentationForTurn(row);
+                        const specialistFormState = specialistFormStateForTurn(history, row);
+                        const specialistFormStatus =
+                          specialistFormState === "replaced"
+                            ? "已有更新的表单，请填写最新一份"
+                            : specialistFormState === "expired"
+                              ? "专家任务已结束，此表单已失效"
+                              : undefined;
+                        const turnContent = (
+                          <>
+                            <MessageText aiGenerated={row.status === "completed"} external={row.mode === "external"}>
+                              {row.status === "completed"
+                                ? row.greeting
+                                : row.status === "failed"
+                                  ? row.error || "这一次没有完成，请查看下方提示。"
+                                  : "这一轮尚未完成，请先确认上次发送；若长时间未完成，请联系开发者。"}
+                            </MessageText>
+                            {row.status === "completed" && (
+                              <Artifacts
+                                external={row.mode === "external"}
+                                turnId={row.id}
+                                artifacts={row.artifacts}
+                                origin={origin}
+                                showOrigin={false}
+                                responses={formResponses}
+                                draftResponses={draftResponses}
+                                disabled={
+                                  !formReady ||
+                                  (specialistFormState !== undefined &&
+                                    specialistFormState !== "current")
+                                }
+                                disabledStatus={specialistFormStatus}
+                                onAction={submitForm}
+                              />
+                            )}
+                            {row.status === "completed" &&
+                              (row.association || origin) && (
+                                <EvidenceCard turn={row} origin={origin} />
+                              )}
+                          </>
+                        );
+                        const canReturn = activeSpecialist?.id === row.id;
+                        if (!origin) {
+                          return row.handoffPreamble
+                            ? (
+                              <>
+                                <HandoffPreamble text={row.handoffPreamble} />
+                                {turnContent}
+                              </>
+                            )
+                            : turnContent;
+                        }
+                        const firstHandoff = !history
+                          .slice(0, rowIndex)
+                          .some((previous) => specialistPresentationForTurn(previous)?.id === origin.id);
+                        return (
+                          <>
+                            {row.handoffPreamble && (
+                              <HandoffPreamble text={row.handoffPreamble} />
+                            )}
+                            {firstHandoff && (
+                              <Text className="specialist-handoff-notice">
+                                阿 J 已把这段对话交给这位 AI 专家，以下是 AI
+                                专家的直接回复
+                              </Text>
+                            )}
+                            <PresentationFrame
+                              origin={origin}
+                              avatarSource={resolveExpertAvatarSource(
+                                origin.avatar?.reference,
+                              )}
+                              exitLabel={canReturn ? "回到阿 J" : undefined}
+                              exitDisabled={!formReady || busy}
+                              onExit={
+                                canReturn
+                                  ? () => void returnToAj(origin.id)
+                                  : undefined
+                              }
+                              showSources={false}
+                            >
+                              {turnContent}
+                            </PresentationFrame>
+                          </>
+                        );
+                      })()}
                     </View>
                     <View className="message-footer">
                       <View className="message-actions">
@@ -818,7 +1077,7 @@ export default function Chat() {
                           <CopyMessage
                             external={row.mode === "external"}
                             value={row.greeting}
-                            label="复制阿 J 先生的回复"
+                            label={specialistPresentationForTurn(row) ? "复制 AI 专家的回复" : "复制阿 J 先生的回复"}
                           />
                         )}
                         <Button
@@ -860,12 +1119,14 @@ export default function Chat() {
                 <View className="message assistant-message">
                   <View className="message-main">
                     <View className="bubble assistant-bubble thinking">
-                      <Text className="thinking-dots">● ● ●</Text>
-                      <MessageText>
-                        {progress?.text ||
-                          progress?.step ||
-                          "阿 J 先生正在换个角度想…"}
-                      </MessageText>
+                      {busy && interimPreamble && (
+                        <HandoffPreamble text={interimPreamble.text} />
+                      )}
+                      <DancingLoader />
+                      <LoadingCarousel
+                        progress={progress}
+                        resetKey={loadingRun}
+                      />
                       {progress && (
                         <LiveArtifacts messages={progress.messages} />
                       )}
@@ -874,7 +1135,18 @@ export default function Chat() {
                 </View>
               </View>
             )}
-            {busy && !pending && progress && <Text className="artifact-caption">{progress.step}</Text>}
+            {busy && !pending && progress && (
+              <View className="message assistant-message">
+                <View className="message-main">
+                  <View className="bubble assistant-bubble thinking">
+                    {interimPreamble && (
+                      <HandoffPreamble text={interimPreamble.text} />
+                    )}
+                    <LoadingCarousel progress={progress} resetKey={loadingRun} />
+                  </View>
+                </View>
+              </View>
+            )}
             <View id="chat-end" className="chat-end" />
           </View>
         </View>
@@ -884,7 +1156,9 @@ export default function Chat() {
               <Text>
                 {identityExpired ? api.IDENTITY_EXPIRED_MESSAGE : error}
               </Text>
-              {!identityExpired && submission.current && (
+              {!identityExpired &&
+                sessionId !== undefined &&
+                submissions.current?.hasPending(sessionId) && (
                 <Button
                   className="text-button check-submission"
                   disabled={disabled}
@@ -892,7 +1166,7 @@ export default function Chat() {
                 >
                   确认上次发送
                 </Button>
-              )}
+                )}
               {identityExpired ? (
                 <Button
                   className="text-button restart-identity"
@@ -952,9 +1226,13 @@ export default function Chat() {
                 onSend={() => send()}
               />
             {!loading && !age?.allowed && <Button className="age-resume" onClick={() => setAgeOpen(true)}>{age?.configuration.previewOnly ? "继续体验" : "继续登录与年龄确认"}</Button>}
-            <Text className="composer-footnote">
-              {age?.configuration.previewOnly ? "本次预览体验登录与年龄确认，暂不开放聊天" : !loading && !consentCurrent(privacy) ? "使用前请在设置 → 隐私与数据中确认授权" : "阿 J 先生是 AI，好意不是对未来的保证"}
-            </Text>
+            {(age?.configuration.previewOnly || (!loading && !consentCurrent(privacy))) && (
+              <Text className="composer-footnote">
+                {age?.configuration.previewOnly
+                  ? "本次预览体验登录与年龄确认，暂不开放聊天"
+                  : "使用前请在设置 → 隐私与数据中确认授权"}
+              </Text>
+            )}
           </View>
         </ChatDock>
         {memoryOpen && (
@@ -963,8 +1241,8 @@ export default function Chat() {
             sessionId={sessionId}
             memory={memory}
             mode={mode}
-            apiKey={apiKey}
-            onKeyUsed={() => setApiKey("")}
+            apiKey=""
+            onKeyUsed={() => {}}
             onChange={setMemory}
             onClose={() => {
               setMemoryOpen(false);
@@ -978,7 +1256,7 @@ export default function Chat() {
       {(ageOpen || !age?.loggedIn) && !identityExpired && <AgeGate profile={profile} avatarSource={avatarSource} status={age} loadingError={error} privacyReady={consentCurrent(privacy)} onChange={setAge}
         onRefresh={boot} onLogin={async () => { clearIdentityView(); await boot(); }}
         onPrivacy={() => void openPrivacy(age?.allowed && !consentCurrent(privacy) ? "authorization" : undefined)}
-        onHelp={() => void openHelp()} onClose={() => setAgeOpen(false)} />}
+        onHelp={() => void openHelp(undefined, "age_verification")} onClose={() => setAgeOpen(false)} />}
     </View>
   );
 }

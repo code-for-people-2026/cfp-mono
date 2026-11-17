@@ -4,6 +4,7 @@ import type { Turn } from "./model";
 import { modes } from "./model";
 import { BottomSheet } from "./bottom-sheet";
 import { MessageText } from "./message-text";
+import type { PresentationOrigin } from "@cfp/base-chat-protocol";
 
 const approaches: Record<string, string> = {
   supportive: "支持性回应",
@@ -15,7 +16,13 @@ const approaches: Record<string, string> = {
   positive_psychology: "积极心理学",
   behavioral: "行为视角",
 };
-export function EvidenceCard({ turn }: { turn: Turn }) {
+export function EvidenceCard({
+  turn,
+  origin,
+}: {
+  turn: Turn;
+  origin?: PresentationOrigin;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <View className="evidence-note">
@@ -28,13 +35,31 @@ export function EvidenceCard({ turn }: { turn: Turn }) {
       </Button>
       {open && (
         <BottomSheet title="回应依据" onClose={() => setOpen(false)}>
-          <MessageText
-            aiGenerated
-            external={turn.mode === "external"}
-            className="artifact-text"
-          >
-            {turn.association}
-          </MessageText>
+          {turn.association && (
+            <MessageText
+              aiGenerated
+              external={turn.mode === "external"}
+              className="artifact-text"
+            >
+              {turn.association}
+            </MessageText>
+          )}
+          {origin && (
+            <Text className="artifact-caption">
+              {origin.sources.length
+                ? `实际参考：${origin.sources
+                    .map(
+                      (source) =>
+                        `${source.library} / ${source.title}（${
+                          source.readStatus === "document"
+                            ? "已读正文"
+                            : "已读片段"
+                        }）`,
+                    )
+                    .join("；")}`
+                : "本轮未使用可核对的知识库正文"}
+            </Text>
+          )}
           <Text className="artifact-caption">
             {approaches[turn.approach || ""] || turn.approach}
           </Text>

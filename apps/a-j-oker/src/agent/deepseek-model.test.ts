@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { FunctionTool, type LlmRequest } from "@google/adk";
 import { FunctionCallingConfigMode } from "@google/genai";
 import { greetingSchema } from "../domain/contracts";
-import { completeDeepSeek } from "../models/deepseek";
+import { DeepSeekError, completeDeepSeek } from "../models/deepseek";
 import { DeepSeekModel, toDeepSeekRequest } from "./deepseek-model";
 
 const save = new FunctionTool({
@@ -196,6 +196,178 @@ describe("DeepSeek 协议适配", () => {
       vi.fn().mockRejectedValue(new Error("private-test-key")),
     );
     await expect(completeDeepSeek(input, "private-test-key")).rejects.toMatchObject({ kind: "transport", message: "DeepSeek 请求未完成，请检查网络或稍后重试" });
+  });
+
+  it("响应体中断保留传输分类，不误报 JSON 格式错误", async () => {
+    const input = toDeepSeekRequest(request(), "deepseek-flash");
+    const failure = new DOMException("synthetic body timeout", "TimeoutError");
+    const body = new ReadableStream({
+      start(controller) {
+        controller.error(failure);
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(body, { status: 200 })),
+    );
+
+    await expect(completeDeepSeek(input, "test-key")).rejects.toMatchObject({
+      kind: "transport",
+      diagnostic: {
+        timeout: true,
+        transportName: "TimeoutError",
+      },
+    });
+  });
+
+  it("传输诊断有界遍历 cause 且保留常见底层错误码", async () => {
+    const input = toDeepSeekRequest(request(), "deepseek-flash");
+    const cyclic = Object.assign(
+      new TypeError("synthetic transient", {
+        cause: new Error("private transport body"),
+      }),
+      { code: "EAI_AGAIN" },
+    );
+    (cyclic.cause as Error).cause = cyclic;
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(cyclic));
+
+    await expect(completeDeepSeek(input, "test-key")).rejects.toMatchObject({
+      kind: "transport",
+      diagnostic: {
+        timeout: false,
+        transportCode: "EAI_AGAIN",
+        transportName: "TypeError",
+      },
+    });
+  });
+  it("只对同参数的瞬时模型请求做有界重试", async () => {
+    const fetch = vi.fn()
+      .mockRejectedValueOnce(new TypeError("synthetic transient"))
+      .mockResolvedValueOnce(Response.json(completion()));
+    vi.stubGlobal("fetch", fetch);
+    const model = new DeepSeekModel({
+      model: "deepseek-flash",
+      apiKey: "test-key",
+      retry: { maxAttempts: 2, retryDelayMs: 0 },
+    });
+
+    const result = await model.generateContentAsync(request()).next();
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls[0]?.[1]?.body).toBe(fetch.mock.calls[1]?.[1]?.body);
+    expect(result.value).toMatchObject({
+      content: { parts: [{ functionCall: { name: "save_greeting" } }] },
+    });
+  });
+
+  it("模型认证和协议错误不做瞬时重试", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response("private body", { status: 401 }));
+    vi.stubGlobal("fetch", fetch);
+    const model = new DeepSeekModel({
+      model: "deepseek-flash",
+      apiKey: "test-key",
+      retry: { maxAttempts: 2, retryDelayMs: 0 },
+    });
+
+    await expect(model.generateContentAsync(request()).next())
+      .rejects.toMatchObject({ kind: "http", status: 401 });
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  it.each([408, 429, 500, 502, 503, 504])(
+    "HTTP %i 属于瞬时错误，重试同一原始请求",
+    async status => {
+      const fetch = vi.fn()
+        .mockResolvedValueOnce(new Response("transient", { status }))
+        .mockResolvedValueOnce(Response.json(completion()));
+      vi.stubGlobal("fetch", fetch);
+      const model = new DeepSeekModel({
+        model: "deepseek-flash",
+        apiKey: "test-key",
+        retry: { maxAttempts: 2, retryDelayMs: 0 },
+      });
+
+      const result = await model.generateContentAsync(request()).next();
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(fetch.mock.calls[0]?.[1]?.body).toBe(fetch.mock.calls[1]?.[1]?.body);
+      expect(result.value).toMatchObject({
+        content: { parts: [{ functionCall: { id: "call-1", name: "save_greeting" } }] },
+      });
+    },
+  );
+
+  it("瞬时错误耗尽有界重试后保留安全错误分类", async () => {
+    const fetch = vi.fn()
+      .mockResolvedValue(new Response("transient", { status: 503 }));
+    vi.stubGlobal("fetch", fetch);
+    const model = new DeepSeekModel({
+      model: "deepseek-flash",
+      apiKey: "test-key",
+      retry: { maxAttempts: 2, retryDelayMs: 0 },
+    });
+
+    await expect(model.generateContentAsync(request()).next())
+      .rejects.toMatchObject({ kind: "http", status: 503 });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("等待重试前已取消时立即退出并清理等待", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const fetch = vi.fn()
+        .mockResolvedValueOnce(new Response("transient", { status: 503 }));
+      vi.stubGlobal("fetch", fetch);
+      const model = new DeepSeekModel({
+        model: "deepseek-flash",
+        apiKey: "test-key",
+        retry: { maxAttempts: 2, retryDelayMs: 100 },
+      });
+      const pending = model.generateContentAsync(request(), false, controller.signal).next();
+      await vi.advanceTimersByTimeAsync(0);
+      controller.abort();
+
+      await expect(pending).rejects.toBeInstanceOf(DOMException);
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("内部调用前钩子可注入一次 503，再由真实请求补齐同一工具调用", async () => {
+    const fetch = vi.fn().mockResolvedValue(Response.json(completion()));
+    vi.stubGlobal("fetch", fetch);
+    const beforeAttempt = vi.fn(({ attempt }: { attempt: number }) => {
+      if (attempt === 1) throw new DeepSeekError("DeepSeek 请求失败（HTTP 503）", "http", 503);
+    });
+    const model = new DeepSeekModel({
+      model: "deepseek-flash",
+      apiKey: "test-key",
+      retry: { maxAttempts: 2, retryDelayMs: 0 },
+      beforeAttempt,
+    });
+
+    const result = await model.generateContentAsync(request()).next();
+
+    expect(beforeAttempt).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(result.value).toMatchObject({
+      content: {
+        parts: [{
+          functionCall: {
+            id: "call-1",
+            name: "save_greeting",
+            args: {
+              greeting: "花开有时，愿你心中有光。",
+              association: "从小花联想到成长。",
+            },
+          },
+        }],
+      },
+    });
+    expect(result.value.content.parts).toHaveLength(1);
   });
   it("调用前拒绝无效密钥，不发送网络请求或保留原值", async () => {
     const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);

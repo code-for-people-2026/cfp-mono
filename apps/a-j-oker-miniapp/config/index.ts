@@ -19,9 +19,37 @@ export default defineConfig(async () => ({
       },
     ],
   },
-  alias: { "@tarojs/plugin-framework-react/dist/runtime": require.resolve("@tarojs/plugin-framework-react/dist/runtime") },
+  alias: {
+    "@tarojs/plugin-framework-react/dist/runtime": require.resolve(
+      "@tarojs/plugin-framework-react/dist/runtime",
+    ),
+  },
   framework: "react",
-  compiler: "vite",
+  compiler: {
+    type: "vite",
+    vitePlugins:
+      process.env.TARO_ENV === "weapp"
+        ? [
+            {
+              // Rollup aliases do not chain, so this must precede Taro's bare replacement.
+              name: "a-j-oker-weapp-components",
+              enforce: "post",
+              config: () => ({
+                resolve: {
+                  alias: [
+                    {
+                      find: /@tarojs\/components$/,
+                      replacement: require.resolve(
+                        "@tarojs/plugin-platform-weapp/dist/components-react",
+                      ),
+                    },
+                  ],
+                },
+              }),
+            },
+          ]
+        : [],
+  },
   defineConstants: {
     HELLO_BUILD_LABEL: JSON.stringify(
       process.env.HELLO_RELEASE_VERSION || "开发版",

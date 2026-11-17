@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { mintCredential } from "./auth";
 import type { Payload } from "payload";
 
@@ -26,6 +26,9 @@ const request = (path: string, body: unknown = {}, method = "POST") => new Reque
   ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
 });
 const context = (path: string) => ({ params: Promise.resolve({ path: path.split("/") }) });
+beforeAll(async () => {
+  await import("../app/api/hello/[...path]/route");
+}, 20000);
 beforeEach(() => {
   state.credential = "miniapp"; state.rowMode = "platform";
   // Authentication is rechecked in the lease; all reads in a request refer to the same owner.

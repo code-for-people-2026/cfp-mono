@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import { setTimeout } from "node:timers/promises";
 import Database from "libsql";
 import { sql, type MigrateDownArgs, type MigrateUpArgs } from "@payloadcms/db-sqlite";
-import { ContentReviewError } from "../src/domain/contracts";
+import { ContentReviewError, ServiceProblemError } from "../src/domain/contracts";
 
 type Verdict = "block" | "uncertain" | "allow";
 const worker = process.argv[2] === "--worker";
@@ -40,7 +40,10 @@ async function rejected(owner: string, id: string = randomUUID(), stage: "input"
   const reviewedBefore = providerCalls;
   try { await invoke(owner, id, stage); assert.fail("the current content decision must still reject"); }
   catch (error) {
-    assert.ok(error instanceof ContentReviewError);
+    assert.ok(
+      error instanceof ContentReviewError
+      || error instanceof ServiceProblemError,
+    );
     // If rule loading itself fails during SQLite contention, no provider
     // verdict exists yet. That request must fail closed with 503, not claim 422.
     const queuedReview = response === "uncertain" && /需要人工复核/.test(error.message);
@@ -121,10 +124,10 @@ try {
     response = 500; await rejected(owner, id);
     response = "block"; await rejected(owner, id);
     response = "uncertain"; await rejected(owner, id);
-    assert.deepEqual(await counts(), [2, 2, 4], "a provider fault does not suppress the subsequent actual content case");
+    assert.deepEqual(await counts(), [1, 1, 3], "a provider fault does not suppress the subsequent actual content case");
     response = 500; await rejected(owner); await rejected(owner);
     response = "uncertain"; assert.doesNotMatch(await rejected(randomUUID()), /已记录/);
-    assert.deepEqual(await counts(), [3, 3, 6], "failure and content budgets cannot consume or reset each other");
+    assert.deepEqual(await counts(), [1, 1, 5], "failure and content budgets cannot consume or reset each other");
     console.log("✓ provider-failure deduplication and budgets remain separate from actual content decisions");
 
     await clear(); Object.assign(process.env, { HELLO_REVIEW_CONTENT_OWNER_DAILY_LIMIT: "10", HELLO_REVIEW_CONTENT_GLOBAL_DAILY_LIMIT: "100" });

@@ -33,6 +33,8 @@
 **/fixtures
 **/*.test.ts
 **/*.test.tsx
+packages/agent-a2a/README.md
+packages/agent-a2a/vitest.config.ts
 apps/a-j-oker/scripts/semantic-history*.ts
 apps/a-j-oker/scripts/semantic-protection-live.ts
 apps/a-j-oker/scripts/moderation-semantic-preservation-check.ts

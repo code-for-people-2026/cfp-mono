@@ -48,14 +48,16 @@ it("缺失图片只导出说明，其他存储错误不被误报为成功", asyn
   await expect(service.exportData()).rejects.toThrow("storage unavailable");
 });
 
-it("自助导出不读取或泄露包含管理员知识原文的内部 ADK 快照", async () => {
+it("自助导出不读取或泄露内部 ADK 与 A2A 方案/引用快照", async () => {
   const { service, find } = fixture(0, 1);
   const original = find.getMockImplementation()!;
-  find.mockImplementation(async (options) => options.collection === "adk-sessions" ? { docs: [{ id: 1, createdAt: "2026-10-13", snapshot: { state: { knowledgeContext: { sources: [{ excerpt: "PRIVATE_ADMIN_REFERENCE", signedUrl: "PRIVATE_TEMP_URL" }] } }, events: [{ content: { parts: [{ text: "PRIVATE_TOOL_STATE" }] } }] } }] } : original(options));
+  find.mockImplementation(async (options) => ["adk-sessions", "a2a-execution-tasks", "a2a-request-ledgers"].includes(options.collection) ? { docs: [{ id: 1, createdAt: "2026-10-13", snapshot: { state: { knowledgeContext: { sources: [{ excerpt: "PRIVATE_ADMIN_REFERENCE", signedUrl: "PRIVATE_TEMP_URL" }] } }, events: [{ content: { parts: [{ text: "PRIVATE_TOOL_STATE" }] } }] } }] } : original(options));
   const result = await service.exportData();
   expect(result.records.greetings).toHaveLength(1);
   expect(result.records).not.toHaveProperty("adk-sessions");
-  expect(find.mock.calls.some(([options]) => options.collection === "adk-sessions")).toBe(false);
+  expect(result.records).not.toHaveProperty("a2a-execution-tasks");
+  expect(result.records).not.toHaveProperty("a2a-request-ledgers");
+  expect(find.mock.calls.some(([options]) => ["adk-sessions", "a2a-execution-tasks", "a2a-request-ledgers"].includes(options.collection))).toBe(false);
   expect(JSON.stringify(result)).not.toMatch(/PRIVATE_ADMIN_REFERENCE|PRIVATE_TEMP_URL|PRIVATE_TOOL_STATE/);
   expect(result.notice).toContain("内部执行快照");
 });

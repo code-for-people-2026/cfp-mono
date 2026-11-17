@@ -100,8 +100,13 @@ export class ContextService {
       revision: memory.revision + 1,
       summary: "",
       throughId: Math.max(memory.throughId, ...turns.map(turn => turn.id)),
+      forgottenThroughId: Math.max(memory.forgottenThroughId ?? 0, memory.throughId, ...turns.map(turn => turn.id)),
       compressions: memory.compressions,
     });
+  }
+  async forgottenThroughId(sessionId: number) {
+    const row = await this.repo.get("sessions", sessionId);
+    return memorySchema.parse(row.memory || {}).forgottenThroughId ?? 0;
   }
   async ensureRoom(sessionId: number) {
     const { memory, turns } = await this.read(sessionId);
@@ -274,6 +279,9 @@ export class ContextService {
         revision: memory.revision + 1,
         summary,
         throughId: candidates[candidates.length - 1].id,
+        ...(memory.forgottenThroughId === undefined
+          ? {}
+          : { forgottenThroughId: memory.forgottenThroughId }),
         compressions: memory.compressions + 1,
         lastCompaction: {
           ...(access.kind === "preview"

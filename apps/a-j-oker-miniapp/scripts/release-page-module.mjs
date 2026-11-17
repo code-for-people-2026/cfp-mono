@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import ts from "typescript";
 
 const parse = (file, code) => ts.createSourceFile(file, code, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
@@ -8,6 +9,10 @@ const relativeModule = (value) => {
   assert.match(value, /^\.\/[^/\\]+\.js$/, "发布页面必须引用同目录 JS 模块");
   return `js/${value.slice(2)}`;
 };
+const decoded = (code) =>
+  code.replace(/\\u([0-9a-f]{4})/gi, (_, digits) =>
+    String.fromCharCode(Number.parseInt(digits, 16)),
+  );
 function findAll(node, predicate) {
   const found = [];
   function visit(child) {
@@ -26,6 +31,42 @@ export function createPageReader(bootstrap, read) {
   async function module(file) {
     if (!modules.has(file)) modules.set(file, read(file).then((code) => parse(file, code)));
     return modules.get(file);
+  }
+  function dependencies(source) {
+    const found = [];
+    function visit(node) {
+      const specifier =
+        (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+        node.moduleSpecifier &&
+        ts.isStringLiteral(node.moduleSpecifier)
+          ? node.moduleSpecifier.text
+          : ts.isCallExpression(node) &&
+              node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+              node.arguments.length > 0 &&
+              ts.isStringLiteral(node.arguments[0])
+            ? node.arguments[0].text
+            : undefined;
+      if (specifier?.startsWith("./")) found.push(relativeModule(specifier));
+      ts.forEachChild(node, visit);
+    }
+    visit(source);
+    return [...new Set(found)];
+  }
+  async function reachable(file) {
+    const found = [];
+    const pending = [file];
+    const seen = new Set([file]);
+    while (pending.length) {
+      const current = pending.shift();
+      const source = await module(current);
+      found.push({ file: current, code: decoded(source.text) });
+      for (const dependency of dependencies(source)) {
+        if (seen.has(dependency)) continue;
+        seen.add(dependency);
+        pending.push(dependency);
+      }
+    }
+    return found;
   }
   function routeImport(route, title) {
     const entries = findAll(app, (node) => ts.isObjectLiteralExpression(node) && property(node, "path")?.initializer?.text === route);
@@ -98,11 +139,67 @@ export function createPageReader(bootstrap, read) {
     }
     assert.fail(`找不到页面导出：${file}:${name}`);
   }
-  return async (route, title) => {
+  async function readPage(route, title) {
     const { file, selected } = routeImport(route, title);
     const code = route.startsWith("pages/privacy/")
       ? await binding(file, selected || "default", selected ? ["default"] : [])
       : (await module(file)).text;
-    return code.replace(/\\u([0-9a-f]{4})/gi, (_, digits) => String.fromCharCode(Number.parseInt(digits, 16)));
+    return decoded(code);
+  }
+  async function readReachable(route, title) {
+    assert.ok(
+      !route.startsWith("pages/privacy/"),
+      "隐私页必须校验选中的组件导出",
+    );
+    const { file } = routeImport(route, title);
+    return reachable(file);
+  }
+  return { readPage, readReachable };
+}
+
+export async function collectCommonJsModules(entry, read) {
+  assert.match(entry, /^(?!\/)[^/].*\.js$/, "无效的小程序入口模块");
+  const modules = new Map();
+  const found = [];
+  const pending = [entry];
+  const seen = new Set([entry]);
+  const resolve = (from, specifier) => {
+    assert.match(
+      specifier,
+      /^\.{1,2}\/[^/\\]+(?:\/[^/\\]+)*\.js$/,
+      "小程序依赖必须是相对 JS 模块",
+    );
+    const target = path.posix.normalize(
+      path.posix.join(path.posix.dirname(from), specifier),
+    );
+    assert.ok(
+      !path.posix.isAbsolute(target) && !target.startsWith("../"),
+      `小程序依赖逃逸发布包：${specifier}`,
+    );
+    return target;
   };
+  while (pending.length) {
+    const file = pending.shift();
+    if (!modules.has(file))
+      modules.set(file, read(file).then((code) => parse(file, code)));
+    const source = await modules.get(file);
+    found.push({ file, code: decoded(source.text) });
+    const requires = findAll(
+      source,
+      (node) =>
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === "require" &&
+        ts.isStringLiteral(node.arguments[0]),
+    );
+    for (const request of requires) {
+      const specifier = request.arguments[0].text;
+      if (!specifier.startsWith("./") && !specifier.startsWith("../")) continue;
+      const dependency = resolve(file, specifier);
+      if (seen.has(dependency)) continue;
+      seen.add(dependency);
+      pending.push(dependency);
+    }
+  }
+  return found;
 }

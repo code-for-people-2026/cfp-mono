@@ -178,15 +178,6 @@ it.each(["missing-sensitive", "updated-policy"])("图片授权不足时带上传
   expect(platform.request.mock.calls.some(([options]) => options.url.endsWith("/media") && options.method === "POST")).toBe(false);
 });
 
-async function openArtifact() {
-  await act(async () => {
-    renderer!.root
-      .findAllByType("button")
-      .find((node) => node.props.className?.includes("artifact-preview"))!
-      .props.onClick();
-  });
-}
-
 it("后台重置登录后直接显示新用户登录窗口，保留对话并使用新凭证加载页面", async () => {
   const originalRequest = platform.request.getMockImplementation()!;
   const preservedHistory = structuredClone(history);
@@ -273,7 +264,6 @@ it.each([false, true])(
         : response;
     });
     await mount();
-    await openArtifact();
     const submit = renderer!.root
       .findAllByType("button")
       .find((node) => node.props.className?.includes("artifact-submit"))!;
@@ -287,7 +277,7 @@ it.each([false, true])(
   },
 );
 
-it("表单提交失败并刷新历史后保留答案，重试成功才锁定表单", async () => {
+it("内联表单失败后保留可编辑答案，确认重试后原表单恢复为答案摘要", async () => {
   const { artifacts } =
     await import("../../../packages/base-chat-protocol/test/fixtures");
   history = [
@@ -298,13 +288,24 @@ it("表单提交失败并刷新历史后保留答案，重试成功才锁定表�
     },
   ];
   const original = platform.request.getMockImplementation()!;
-  const submitted: unknown[] = [];
+  const submitted: Array<{ values: unknown; form: unknown }> = [];
   let result: Turn | undefined;
   platform.request.mockImplementation(async (options) => {
     if (options.url.endsWith("/ag-ui")) {
       const values =
         options.data.forwardedProps.clientEvent.action.context.values;
-      submitted.push(structuredClone(values));
+      const submission =
+        options.data.forwardedProps.clientEvent.action.context.submission;
+      submitted.push(
+        structuredClone({
+          values,
+          form: {
+            presentationId: submission.presentationId,
+            revision: submission.revision,
+            formId: submission.formId,
+          },
+        }),
+      );
       result = {
         ...initial,
         id: submitted.length + 1,
@@ -327,7 +328,6 @@ it("表单提交失败并刷新历史后保留答案，重试成功才锁定表�
     return original(options);
   });
   await mount();
-  await openArtifact();
   const fields = () =>
     renderer!.root.findAll(
       (node) =>
@@ -354,16 +354,105 @@ it("表单提交失败并刷新历史后保留答案，重试成功才锁定表�
       .some((node) => node.children.includes("模型暂时失败")),
   ).toBe(true);
   expect(fields().map((field) => field.props.value)).toEqual(answers);
+  expect(fields().every((field) => !field.props.disabled)).toBe(true);
   expect(button().props.disabled).toBeFalsy();
   await act(async () => {
     button().props.onClick();
   });
   expect(submitted).toHaveLength(2);
-  await openArtifact();
   expect(submitted[1]).toEqual(submitted[0]);
-  expect(submitted[1]).toMatchObject({ intensity: 0 });
-  expect(fields().map((field) => field.props.value)).toEqual(answers);
-  expect(button().props.disabled).toBe(true);
+  expect(submitted[1]?.values).toMatchObject({ intensity: 0 });
+  expect(submitted[1]?.form).toMatchObject({
+    presentationId: "urn:cfp:a-j-oker:turn:1",
+    revision: 1,
+    formId: "thought_record",
+  });
+  const summary = renderer!.root.findByProps({
+    className: "artifact-form-summary",
+  });
+  const rows = summary.findAllByProps({ className: "artifact-summary-row" });
+  const rowText = (row: (typeof rows)[number], className: string) =>
+    row.findAllByType("text").find((node) => node.props.className === className)!
+      .children.join("");
+  expect(rows.map((row) =>
+    rowText(row, "artifact-summary-question"),
+  )).toEqual(["发生了什么？", "当时的想法", "当时的情绪", "情绪强度"]);
+  expect(rows.map((row) =>
+    rowText(row, "artifact-summary-answer"),
+  )).toEqual(answers);
+  const confirmedSurface = summary.parent!;
+  expect(confirmedSurface.findAllByType("input")).toHaveLength(0);
+  expect(confirmedSurface.findAllByType("textarea")).toHaveLength(0);
+  expect(confirmedSurface.findAllByProps({ className: "control artifact-submit" }))
+    .toHaveLength(0);
+});
+
+it("表单按钮渲染后若年龄授权过期，旧回调明确失败且不会误报已提交", async () => {
+  const { artifacts } =
+    await import("../../../packages/base-chat-protocol/test/fixtures");
+  history = [
+    {
+      ...initial,
+      input: { text: "请给我一份练习", mediaIds: [] },
+      artifacts: artifacts.filter((item) => item.kind === "form"),
+    },
+  ];
+  await mount();
+  const fields = renderer!.root.findAll(
+    (node) =>
+      ["input", "textarea"].includes(String(node.type)) &&
+      node.props.className?.includes("artifact-input"),
+  );
+  act(() =>
+    fields.forEach((field, index) =>
+      field.props.onInput({
+        detail: {
+          value: ["会议数字已更正", "担心大家不信任我", "紧张", "2"][
+            index
+          ],
+        },
+      }),
+    ),
+  );
+  const staleSubmit = renderer!.root
+    .findAllByType("button")
+    .find((node) => node.props.className?.includes("artifact-submit"))!
+    .props.onClick;
+  const now = vi
+    .spyOn(Date, "now")
+    .mockReturnValue(Date.parse("2100-01-01T00:00:00.000Z"));
+  try {
+    const didShow = platform.useDidShow.mock.calls.at(-1)?.[0];
+    expect(didShow).toBeTypeOf("function");
+    act(() => didShow());
+    expect(
+      renderer!.root
+        .findAllByType("button")
+        .find((node) => node.props.className?.includes("artifact-submit"))!
+        .props.disabled,
+    ).toBe(true);
+    await act(async () => {
+      staleSubmit();
+      await Promise.resolve();
+    });
+  } finally {
+    now.mockRestore();
+  }
+  expect(
+    renderer!.root
+      .findAll((node) => node.props.className === "artifact-error")
+      .some((node) =>
+        node.children.includes("表单当前无法提交，请确认页面仍可用后重试"),
+      ),
+  ).toBe(true);
+  expect(text()).not.toContain("已提交，阿 J 先生已接着回应");
+  expect(
+    platform.request.mock.calls.filter(
+      ([options]) =>
+        options.url.endsWith("/ag-ui") &&
+        options.data?.forwardedProps?.clientEvent,
+    ),
+  ).toHaveLength(0);
 });
 
 describe("聊天历史与图片失败隔离", () => {
@@ -655,6 +744,120 @@ describe("聊天历史与图片失败隔离", () => {
         options.url.endsWith("/ag-ui"),
       ),
     ).toHaveLength(1);
+  });
+  it("SERVICE_PROBLEM 确认缺失时保留原错误和草稿，重试复用请求 ID", async () => {
+    const originalRequest = platform.request.getMockImplementation()!;
+    const ids: string[] = [];
+    let statusChecks = 0;
+    const serviceProblemSse = [
+      { type: "RUN_STARTED" as const },
+      {
+        type: "RUN_ERROR" as const,
+        message: "服务暂时不可用，本次结果尚未确认；请先确认本轮状态，不要直接重复生成。",
+        code: "SERVICE_PROBLEM",
+        metadata: { retryable: true, definitive: false },
+      },
+    ];
+    platform.request.mockImplementation(
+      (options: { url: string; data?: AgentBody }) => {
+        if (options.url.includes("/requests/")) {
+          statusChecks += 1;
+          if (statusChecks === 1) return Promise.reject(new Error("状态查询也断网"));
+          return Promise.resolve({ statusCode: 200, data: { turn: null } });
+        }
+        if (options.url.endsWith("/ag-ui")) {
+          const args = options.data!;
+          ids.push(args.runId);
+          if (ids.length === 1) {
+            const events = serviceProblemSse.map((event, index) => ({
+              ...event,
+              ...(index === 0 ? { runId: args.runId } : {}),
+            }));
+            const response = {
+              statusCode: 200,
+              data: events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
+            };
+            let chunk:
+              | ((result: { data: ArrayBuffer }) => void)
+              | undefined;
+            let complete:
+              | ((value: { statusCode: number; data: string }) => void)
+              | undefined;
+            const task = Object.assign(
+              new Promise<{ statusCode: number; data: string }>((resolve) => {
+                complete = resolve;
+              }),
+              {
+                onChunkReceived: (callback: typeof chunk) => {
+                  chunk = callback;
+                },
+                offChunkReceived: () => {},
+                abort: () => {},
+              },
+            );
+            queueMicrotask(() => {
+              chunk?.({ data: new TextEncoder().encode(response.data).buffer });
+              complete?.(response);
+            });
+            return task;
+          }
+          history.push({
+            ...initial,
+            id: 2,
+            input: inputOf(args),
+            greeting: "确认原请求后保存的回复",
+          });
+          return { statusCode: 200, data: wire(args.runId) };
+        }
+        return originalRequest(options);
+      },
+    );
+    await mount();
+    act(() =>
+      renderer!.root
+        .findByType("textarea")
+        .props.onInput({ detail: { value: "服务故障后的原草稿" } }),
+    );
+    const send = () =>
+      renderer!.root
+        .findAllByType("button")
+        .find((button) => button.props.className.includes("send-button"))!;
+    const confirm = () =>
+      renderer!.root
+        .findAllByType("button")
+        .find((button) =>
+          button.props.className.includes("check-submission"),
+        )!;
+    await act(async () => {
+      await send().props.onClick();
+    });
+    expect(text()).toContain(
+      "服务暂时不可用，本次结果尚未确认；请先确认本轮状态，不要直接重复生成。",
+    );
+    expect(renderer!.root.findByType("textarea").props.value).toBe(
+      "服务故障后的原草稿",
+    );
+    await act(async () => {
+      await confirm().props.onClick();
+    });
+    expect(text()).toContain(
+      "服务暂时不可用，本次结果尚未确认；请先确认本轮状态，不要直接重复生成。",
+    );
+    expect(renderer!.root.findByType("textarea").props.value).toBe(
+      "服务故障后的原草稿",
+    );
+    await act(async () => {
+      await confirm().props.onClick();
+    });
+    expect(text()).toContain(
+      "服务暂时不可用，本次结果尚未确认；请先确认本轮状态，不要直接重复生成。",
+    );
+    await act(async () => {
+      await send().props.onClick();
+    });
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(1);
+    expect(text()).toContain("确认原请求后保存的回复");
   });
   it("旧 BYOK 历史仍可查看，当前发送保持平台模式且不显示密钥框", async () => {
     history.push({ ...initial, id: 2, mode: "byok", greeting: "以前自带密钥生成的回复" });
@@ -1100,6 +1303,65 @@ describe("聊天历史与图片失败隔离", () => {
 });
 
 describe("新会话与历史导航", () => {
+  it.each(["identity-clear", "unmount"] as const)(
+    "创建首个会话期间发生 %s，不恢复旧会话也不启动生成",
+    async (interruption) => {
+      const original = platform.request.getMockImplementation()!;
+      let finishSession: ((response: unknown) => void) | undefined;
+      platform.request.mockImplementation(async (options) => {
+        if (options.url.endsWith("/sessions") && options.method === "POST")
+          return new Promise((resolve) => {
+            finishSession = resolve;
+          });
+        if (options.url.endsWith("/sessions"))
+          return { statusCode: 200, data: [] };
+        return original(options);
+      });
+      await mount();
+      act(() =>
+        renderer!.root.findByType("textarea").props.onInput({
+          detail: { value: "尚未建立会话的消息" },
+        }),
+      );
+      let sending: Promise<void> | undefined;
+      act(() => {
+        sending = renderer!.root
+          .findAllByType("button")
+          .find((node) => node.props.className.includes("send-button"))!
+          .props.onClick();
+      });
+      expect(finishSession).toBeTypeOf("function");
+      if (interruption === "identity-clear") {
+        const identityListener = platform.eventCenter.on.mock.calls.find(
+          ([event]) => event === "hello:privacy-changed",
+        )?.[1];
+        expect(identityListener).toBeTypeOf("function");
+        act(() => identityListener({ clearIdentity: true }));
+      } else {
+        act(() => renderer!.unmount());
+        renderer = undefined;
+      }
+      await act(async () => {
+        finishSession!({
+          statusCode: 200,
+          data: { id: 2, title: "不应恢复的新会话" },
+        });
+        await sending;
+      });
+      expect(
+        platform.request.mock.calls.filter(([options]) =>
+          options.url.endsWith("/ag-ui"),
+        ),
+      ).toHaveLength(0);
+      expect(platform.setStorageSync).not.toHaveBeenCalledWith(
+        "hello-active-session:https://example.test",
+        2,
+      );
+      if (interruption === "identity-clear")
+        expect(text()).not.toContain("不应恢复的新会话");
+    },
+  );
+
   it("新会话保留身份与旧记录，切回恢复草稿并隔离记忆", async () => {
     const original = platform.request.getMockImplementation()!;
     let created = false;

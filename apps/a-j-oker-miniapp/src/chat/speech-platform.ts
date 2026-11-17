@@ -1,5 +1,5 @@
 import Taro from "@tarojs/taro";
-import type { SpeechDriver, SpeechEvents } from "./speech";
+import type { SpeechDriver, SpeechEvents } from "@cfp/chat-ui-taro/speech";
 
 interface WechatRecognition {
   start(options: { lang: "zh_CN"; duration: number }): void;

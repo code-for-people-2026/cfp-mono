@@ -1,12 +1,17 @@
 export * from "./age";
 export * from "./profile";
 export * from "./service-scope";
+export * from "./presentation";
 import { z } from "zod";
 import {
+  legacyArtifactsSchema,
+  presentationAvatarSchema,
+} from "@cfp/base-chat-protocol";
+import {
+  approachSchema,
   formResponseSchema,
   replySchema,
-  artifactsSchema,
-} from "@cfp/base-chat-protocol";
+} from "./presentation";
 
 // 只含跨端协议与校验；不能依赖 Payload、ADK 或 Node 运行时。
 export const inputSchema = z
@@ -14,13 +19,29 @@ export const inputSchema = z
     text: z.string().trim().max(4000).default(""),
     mediaIds: z.array(z.number().int().positive()).max(3).default([]),
     formResponse: formResponseSchema.optional(),
+    action: z
+      .object({
+        type: z.literal("return_to_coordinator"),
+        taskId: z.string().trim().min(1).max(128),
+      })
+      .strict()
+      .optional(),
   })
   .refine(
     (value) =>
       value.text.length > 0 ||
       value.mediaIds.length > 0 ||
-      !!value.formResponse,
+      !!value.formResponse ||
+      !!value.action,
     "请输入文字或上传图片",
+  )
+  .refine(
+    (value) => !value.action || (
+      value.text.length === 0 &&
+      value.mediaIds.length === 0 &&
+      !value.formResponse
+    ),
+    "返回操作不能同时携带文字、图片或表单",
   );
 export const modeSchema = z.enum(["platform", "byok", "external"]);
 export const turnSchema = z.object({
@@ -31,6 +52,11 @@ export const turnSchema = z.object({
   apiKey: z.string().min(10).max(256).optional(),
 });
 export const greetingSchema = replySchema;
+export const handoffPreambleSchema = z
+  .string()
+  .trim()
+  .min(12)
+  .max(320);
 export const externalSchema = z.object({
   sessionId: z.number().int().positive(),
   requestId: z.string().uuid(),
@@ -53,11 +79,34 @@ export const turnResultSchema = z.object({
   imageGeneration: z.object({ status: z.enum(["submitting", "pending", "stored", "failed", "blocked"]), canResume: z.boolean() }).nullish(),
   mode: modeSchema,
   greeting: z.string().nullish(),
+  handoffPreamble: handoffPreambleSchema.nullish(),
   error: z.string().nullish(),
   association: z.string().nullish(),
   approach: z.string().nullish(),
-  artifacts: artifactsSchema.nullish(),
+  artifacts: legacyArtifactsSchema.nullish(),
   model: z.string().nullish(),
+  specialist: z
+    .object({
+      taskId: z.string().min(1).max(128),
+      expertId: approachSchema,
+      name: z.string().min(1).max(80),
+      method: z.string().min(1).max(120),
+      configurationRevision: z.string().min(1).max(256),
+      theme: z.enum(["sage", "blue", "plum", "amber"]),
+      layout: z.enum(["reflection", "step_by_step", "action_plan"]),
+      subtitle: z.string().trim().min(1).max(80).optional(),
+      status: z.enum(["active", "completed", "unavailable"]),
+      // Opaque local-asset identity. Historical snapshots may predate it and
+      // remain valid; AJ clients resolve only references they explicitly bundle.
+      avatarReference: presentationAvatarSchema.shape.reference.optional(),
+      sources: z.array(z.object({
+        library: z.string().max(120),
+        title: z.string().max(500),
+        readStatus: z.enum(["snippet", "document"]),
+      }).strict()).max(6),
+    })
+    .strict()
+    .nullish(),
   createdAt: z.string(),
 });
 export const historySchema = z.array(turnResultSchema);
@@ -113,7 +162,12 @@ export const credentialSchema = z.object({
 export const identitySchema = z.object({ owner: z.string() });
 export const completedSchema = z.object({ completed: z.boolean() });
 export const revokedSchema = z.object({ revoked: z.boolean() });
-export const errorSchema = z.object({ error: z.string() });
+export const errorSchema = z.object({
+  error: z.string(),
+  code: z.string().regex(/^[A-Z][A-Z0-9_]{1,63}$/).optional(),
+  retryable: z.boolean().optional(),
+  definitive: z.boolean().optional(),
+});
 
 export type Inspiration = z.output<typeof inputSchema>;
 export type Greeting = z.output<typeof greetingSchema>;

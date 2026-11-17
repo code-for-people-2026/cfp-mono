@@ -72,7 +72,7 @@ async function purgeCaseContent(payload: Payload, req: PayloadRequest, row: Safe
   const nextReview = keepReferences ? new Date(now.getTime() + 30 * DAY).toISOString() : null;
   const projected = { ...row, revision: Number(row.revision) + 1, retainUntil: nextReview, retentionReviewNeeded: keepReferences, legalHold: false, holdReviewAt: null };
   if (recordGuard) await writeRetentionLedger(retentionRecord(projected, "purge"));
-  await payload.update({ collection: "safety-evidence", overrideAccess: true, req, where: { caseId: { equals: row.id } }, data: { excerpt: null, digest: "erased", originalLength: null, purgedAt: now.toISOString(), purgeReason: reason } });
+  await payload.update({ collection: "safety-evidence", overrideAccess: true, req, where: { caseId: { equals: row.id } }, data: { excerpt: null, provenance: null, conversation: null, digest: "erased", originalLength: null, purgedAt: now.toISOString(), purgeReason: reason } });
   await sanitizeEnforcements(payload, req, row);
   const changed = await payload.update({ collection: "safety-cases", overrideAccess: true, req, where: { and: [{ id: { equals: row.id } }, { revision: { equals: row.revision } }] }, data: {
     reason: null, reply: null, retentionBasis: null, holdReason: null, holdReviewAt: null,

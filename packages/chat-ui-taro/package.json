@@ -1,0 +1,47 @@
+{
+  "name": "@cfp/chat-ui-taro",
+  "version": "0.0.0",
+  "private": true,
+  "license": "LicenseRef-Cattle",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./artifacts": "./src/artifacts-entry.ts",
+    "./a2ui-native": "./src/a2ui-host.native.tsx",
+    "./a2ui-h5": "./src/a2ui-host.h5.tsx",
+    "./recoverable-submit": "./src/recoverable-submit.ts",
+    "./speech": "./src/speech.ts",
+    "./styles.css": "./src/styles.css"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@a2ui/web_core": "0.10.4",
+    "@cfp/base-chat-protocol": "workspace:*",
+    "@copilotkit/a2ui-renderer": "1.79.0",
+    "zod": "^3.25.76"
+  },
+  "peerDependencies": {
+    "@tarojs/components": "4.2.0",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@cfp/eslint-config": "workspace:*",
+    "@cfp/typescript-config": "workspace:*",
+    "@tarojs/components": "4.2.0",
+    "@types/node": "^20.19.30",
+    "@types/react": "^18.3.27",
+    "@types/react-test-renderer": "18.3.1",
+    "@vitest/coverage-v8": "^1.6.1",
+    "eslint": "^9.39.2",
+    "react": "18.2.0",
+    "react-test-renderer": "18.2.0",
+    "typescript": "^5.9.3",
+    "vitest": "^1.6.1"
+  }
+}

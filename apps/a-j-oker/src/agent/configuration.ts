@@ -4,6 +4,11 @@ import { AppError } from "../domain/contracts";
 import { decryptKnowledgeSecret } from "../cms/secret";
 import type { PsychologyApproach } from "./psychology";
 import {
+  defaultAgentConfig,
+  type ArtifactComponent,
+  type ExpertPresentation,
+} from "./default-prompts";
+import {
   searchIma,
   type KnowledgeContext,
   type ImaConnection,
@@ -14,6 +19,12 @@ export type SpecialistDefinition = {
   label: string;
   prompt: string;
   revision: string;
+  theme?: "sage" | "blue" | "plum" | "amber";
+  preferredLayout?: "reflection" | "step_by_step" | "action_plan";
+  subtitle?: string;
+  avatarReference?: string;
+  allowedComponents?: ArtifactComponent[];
+  preferredComponents?: ArtifactComponent[];
   knowledge?: (query: string, signal: AbortSignal) => Promise<KnowledgeContext>;
 };
 export type AgentConfiguration = {
@@ -32,6 +43,37 @@ export function imaConnection(
     clientId: row.clientId,
     knowledgeBaseId: row.knowledgeBaseId,
     apiKey: decryptKnowledgeSecret(row.encryptedApiKey, secret),
+  };
+}
+
+export function resolveExpertPresentation(
+  key: PsychologyApproach,
+  stored: Partial<Omit<ExpertPresentation, "subtitle">> & {
+    subtitle?: string | null;
+  },
+): ExpertPresentation {
+  const defaults = defaultAgentConfig(key);
+  if (!defaults || !("avatarReference" in defaults))
+    throw new Error(`未知心理专家配置：${key}`);
+  // Payload reads a hasMany field with no child rows as [], so old databases
+  // need the nullable scalar fields as the pre-feature sentinel. Once either
+  // scalar is stored, [] is an administrator's intentional "no artifacts".
+  const preFeature = stored.theme == null && stored.preferredLayout == null;
+  const allowedComponents = preFeature
+    ? defaults.allowedComponents
+    : (stored.allowedComponents ?? defaults.allowedComponents);
+  return {
+    theme: stored.theme ?? defaults.theme,
+    preferredLayout: stored.preferredLayout ?? defaults.preferredLayout,
+    // Missing, null and blank values all use the AJ built-in copy. A configured
+    // nonblank value wins without replacing the stored expert snapshot.
+    subtitle: stored.subtitle?.trim() || defaults.subtitle,
+    avatarReference: stored.avatarReference ?? defaults.avatarReference,
+    allowedComponents,
+    preferredComponents: (preFeature
+      ? defaults.preferredComponents
+      : (stored.preferredComponents ?? defaults.preferredComponents)
+    ).filter((value) => allowedComponents.includes(value)),
   };
 }
 
@@ -78,6 +120,16 @@ export async function loadAgentConfiguration(
     coordinator: coordinator.prompt,
     revision: `${coordinator.id}:${coordinator.updatedAt}`,
     specialists: enabled.map((doc) => {
+      const presentation = resolveExpertPresentation(
+        doc.key as PsychologyApproach,
+        {
+          theme: doc.theme ?? undefined,
+          preferredLayout: doc.preferredLayout ?? undefined,
+          subtitle: doc.subtitle ?? undefined,
+          allowedComponents: doc.allowedComponents ?? undefined,
+          preferredComponents: doc.preferredComponents ?? undefined,
+        },
+      );
       const boundIds = (doc.knowledgeBases ?? []).map((ref) =>
         typeof ref === "number" ? ref : ref.id,
       );
@@ -89,6 +141,7 @@ export async function loadAgentConfiguration(
         label: doc.name,
         prompt: doc.prompt,
         revision: `${doc.id}:${doc.updatedAt}`,
+        ...presentation,
         knowledge: bound.length
           ? async (query, signal) => {
               const sources: KnowledgeContext["sources"] = [];

@@ -8,6 +8,8 @@
 .age-panel .age-link{display:block;width:auto;min-height:36px;padding:8px 0;margin:9px auto 0;font-size:12px;color:#728677;text-decoration:underline;text-underline-offset:3px}
 .age-panel .age-disabled{opacity:.45}
 .age-hint{display:block;font-size:12px;line-height:1.5;color:#879187;margin-top:10px}
+.age-review-receipt,.age-review-reply{display:block;text-align:left;font-size:12px;line-height:1.7;color:#647566;margin:10px 0;overflow-wrap:anywhere}
+.age-review-reply{padding:10px 12px;border-radius:10px;background:#f4f6ef}
 .age-date{box-sizing:border-box;display:flex;justify-content:space-between;align-items:center;min-height:48px;padding:12px 14px;margin:0 0 16px;border:1px solid #dce3d6;border-radius:12px;background:#f8f8f0;text-align:left;color:#8b9388;font-size:15px}
 .age-date-selected{color:#23483b}.age-date-arrow{color:#879187;margin-left:10px}
 .age-input{box-sizing:border-box;height:46px;padding:10px 12px;border:1px solid #dce3d6;border-radius:10px;margin:12px 0;background:#fff;text-align:left;font-size:14px}

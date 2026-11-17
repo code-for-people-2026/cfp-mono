@@ -59,7 +59,7 @@ describe("命中后的语境复核", () => {
     answer(JSON.stringify({
       decision: "allow",
       service_scope: "support",
-      interaction: { minor: false, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: true },
+      interaction: { minor: false, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: true, single_choice_only: false },
     }));
     const reserve = vi.fn();
     const result = await evaluateText({ ...request, purpose: "image_generation", texts: ["画一朵小花"], context: "前一轮谈到春天" },
@@ -76,7 +76,7 @@ describe("命中后的语境复核", () => {
     answer(JSON.stringify({
       decision: "allow",
       service_scope: "support",
-      interaction: { minor: false, crisis: true, dependency: false, overuse: false, exit: false, forget_context: true, image_requested: false },
+      interaction: { minor: false, crisis: true, dependency: false, overuse: false, exit: false, forget_context: true, image_requested: false, single_choice_only: false },
     }));
     const context = JSON.stringify({ memory: "用户需要完成稿件", previous: [{ input: { text: "昨天提到稿件", mediaIds: [] }, greeting: "我在" }] });
     const verdict = await moderateText({
@@ -84,7 +84,7 @@ describe("命中后的语境复核", () => {
     });
     expect(verdict).toEqual({
       serviceScope: "support",
-      interaction: { minor: false, crisis: true, dependency: false, overuse: false, exit: false, forget_context: true, image_requested: false },
+      interaction: { minor: false, crisis: true, dependency: false, overuse: false, exit: false, forget_context: true, image_requested: false, single_choice_only: false },
     });
     const payload = JSON.parse(String(complete.mock.calls[0][0].messages[1].content));
     expect(payload).toMatchObject({ interaction: true, texts: ["有人提醒我交稿，但我不想加班，心里很烦。"], context });
@@ -95,14 +95,41 @@ describe("命中后的语境复核", () => {
     expect(complete.mock.calls[0][0]).toMatchObject({ temperature: 0, response_format: { type: "json_object" }, max_tokens: 512 });
   });
   it("互动标志是必填布尔且不允许未知字段", () => {
-    const assessment = { minor: false, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: false };
+    const assessment = { minor: false, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: false, single_choice_only: false };
     expect(interactionAssessmentSchema.parse(assessment)).toEqual(assessment);
     expect(interactionAssessmentSchema.safeParse({ ...assessment, crisis: undefined }).success).toBe(false);
     expect(interactionAssessmentSchema.safeParse({ ...assessment, productHelp: true }).success).toBe(false);
     expect(interactionAssessmentSchema.safeParse({ ...assessment, crisis: "false" }).success).toBe(false);
   });
+  it.each([
+    ["用一道可点击的单选题帮我辨认我今天烦躁的原因", true],
+    ["同事说『用一道可点击的单选题问我』，但我现在只想聊聊", false],
+    ["不要出单选题了，直接跟我聊聊今天的烦躁", false],
+  ])("单题单选语义区分明确请求与引用或否定：%s", async (text, single_choice_only) => {
+    const interaction = { minor: false, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: false, single_choice_only };
+    answer(JSON.stringify({ decision: "allow", service_scope: "support", interaction }));
+    await expect(moderateText({ ...request, serviceScope: true, interaction: true, texts: [text] }))
+      .resolves.toEqual({ serviceScope: "support", interaction });
+    expect(JSON.parse(String(complete.mock.calls[0][0].messages[1].content)).texts).toEqual([text]);
+  });
+  it.each([
+    ["请交给认知行为专家接手，结合资料，只问一个开放式问题，用一份内嵌表单让我填写。", true],
+    ["同事说『只问一个开放式问题，用表单让我填』，我只是转述。", false],
+    ["不要只问一个开放式问题了，先直接聊聊。", false],
+    ["请用开放式问题和表单帮我梳理。", false],
+    ["我提交上一份表单的答案：当时我很紧张。", false],
+  ])("单题开放式表单语义只识别当前明确约束：%s", async (text, single_open_question_only) => {
+    const interaction = {
+      minor: false, crisis: false, dependency: false, overuse: false, exit: false,
+      forget_context: false, image_requested: false, single_choice_only: false,
+      single_open_question_only,
+    };
+    answer(JSON.stringify({ decision: "allow", service_scope: "support", interaction }));
+    await expect(moderateText({ ...request, serviceScope: true, interaction: true, texts: [text] }))
+      .resolves.toEqual({ serviceScope: "support", interaction });
+  });
   it.each(["block", "uncertain"] as const)("内容拒绝保留同一响应中的有效互动标志：%s", async decision => {
-    const interaction = { minor: true, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: false };
+    const interaction = { minor: true, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: false, single_choice_only: false };
     answer(JSON.stringify({ decision, service_scope: "support", interaction }));
     const error = await moderateText({ ...request, serviceScope: true, interaction: true }).then(() => { throw new Error("rejected content must not resolve"); }, (value: unknown) => value);
     if (decision === "block") {
@@ -202,6 +229,73 @@ describe("命中后的语境复核", () => {
     expect(complete).not.toHaveBeenCalled();
     complete.mockRejectedValue(new Error("private-test-key provider raw body"));
     await expect(moderateText(request)).rejects.toMatchObject({ status: 503, message: "内容审核暂未完成，请稍后重试" });
+  });
+  it("加载动画测试输入零关键词时仍保留安全 finish_reason 诊断", async () => {
+    answer(JSON.stringify({
+      decision: "allow",
+      service_scope: "support",
+      interaction: {
+        minor: false, crisis: false, dependency: false, overuse: false,
+        exit: false, forget_context: false, image_requested: false,
+        single_choice_only: false, single_open_question_only: false,
+      },
+    }), "length");
+    const verdict = await evaluateText({
+      ...request,
+      texts: ["测试一下加载动画"],
+      serviceScope: true,
+      interaction: true,
+    }, defaultRule);
+    expect(verdict).toMatchObject({ keywordCount: 0, decision: "unavailable" });
+    expect(verdict.diagnostic).toMatchObject({
+      requestId: "test-request",
+      model: "deepseek-flash",
+      reason: "finish_reason",
+      finishReason: "length",
+    });
+    const logged = JSON.stringify(vi.mocked(console.info).mock.calls);
+    expect(logged).not.toContain("测试一下加载动画");
+    expect(logged).not.toContain(request.apiKey);
+  });
+  it("未知 finish_reason 与伪造诊断属性不进入安全诊断", async () => {
+    answer(JSON.stringify({
+      decision: "allow",
+      service_scope: "support",
+      interaction: {
+        minor: false, crisis: false, dependency: false, overuse: false,
+        exit: false, forget_context: false, image_requested: false,
+        single_choice_only: false, single_open_question_only: false,
+      },
+    }), "provider_invented_reason");
+    await expect(evaluateText({
+      ...request,
+      serviceScope: true,
+      interaction: true,
+    }, defaultRule)).resolves.toMatchObject({
+      decision: "unavailable",
+      diagnostic: {
+        reason: "finish_reason",
+      },
+    });
+
+    complete.mockRejectedValue(Object.assign(new Error("forged"), {
+      moderationDiagnostic: { version: 1, reason: "forged_secret" },
+    }));
+    await expect(evaluateText(request, defaultRule)).resolves.toMatchObject({
+      decision: "unavailable",
+      diagnostic: {
+        phase: "network",
+        reason: "provider_request_failed",
+      },
+    });
+    complete.mockRejectedValue(null);
+    await expect(evaluateText(request, defaultRule)).resolves.toMatchObject({
+      decision: "unavailable",
+      diagnostic: {
+        phase: "network",
+        reason: "provider_request_failed",
+      },
+    });
   });
   it("语义审核先预扣一次调用，预算不足不访问供应商；未召回不扣额度", async () => {
     const reserve = vi.fn(async () => { throw new Error("quota exhausted"); });

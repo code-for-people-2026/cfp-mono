@@ -9,6 +9,7 @@ import { configuredImageReviewer, imageReviewConfigured, ImageReviewUnavailableE
 import { configuredImageProvider, ImageTaskFailed, ImageSubmissionRejected, imageRequestSchema, WAN_MODEL, type ImageProvider, type ImageRequest } from "./wan";
 import { generatedJpeg } from "./render";
 import { reserveImageTask } from "./quota";
+import type { GenerationProgress } from "../domain/contracts";
 
 type ImageStateRow = { imageGeneration?: unknown; status?: string; visibility?: string };
 const stateSchema = z.object({
@@ -45,7 +46,7 @@ export class ImageGenerationService {
     private reviewer: ImageReviewer,
     private provider: () => ImageProvider = configuredImageProvider,
   ) {}
-  async generate(turnId: number, value: ImageRequest, signal: AbortSignal, apiKey?: string, progress?: (message: string) => void): Promise<GeneratedImage> {
+  async generate(turnId: number, value: ImageRequest, signal: AbortSignal, apiKey?: string, progress?: (stage: GenerationProgress) => void): Promise<GeneratedImage> {
     signal.throwIfAborted();
     let row = await this.repo.get("greetings", turnId);
     if (row.status !== "running" || row.visibility === "quarantined") throw new AppError(409, "本轮已结束或停止展示，不能继续生图");
@@ -88,7 +89,7 @@ export class ImageGenerationService {
       signal.throwIfAborted();
       state = { input, model: WAN_MODEL, status: "submitting", startedAt: new Date().toISOString() };
       await this.repo.update("greetings", turnId, { imageGeneration: state });
-      progress?.("阿J正在绘制图片");
+      progress?.({ stageId: "image_generation", stepName: "阿 J 先生正在绘制图片" });
       let taskId: string;
       try { taskId = await provider.submit(input, signal); }
       catch (error) {
@@ -103,11 +104,11 @@ export class ImageGenerationService {
     }
     if (!state.taskId) throw new AppError(409, "生图任务编号缺失，未重新提交");
     try {
-      progress?.("图片正在生成，请稍候");
+      progress?.({ stageId: "image_generation", stepName: "图片正在生成，请稍候" });
       const bytes = await provider.result(state.taskId, signal);
       signal.throwIfAborted();
       const normalized = await generatedJpeg(bytes, `${this.repo.owner.id}:${turnId}:${state.taskId}`);
-      progress?.("图片已生成，正在审核和保存");
+      progress?.({ stageId: "image_review", stepName: "图片已生成，正在审核和保存" });
       const review = await reviewImage(this.repo, normalized, this.reviewer, { stage: "output_image", turnId, sessionId: Number(row.sessionId) });
       signal.throwIfAborted();
       await assertGenerationAllowed(this.repo.payload, this.repo.owner.id);

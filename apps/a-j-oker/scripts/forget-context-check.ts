@@ -29,7 +29,7 @@ try {
   await seedSyntheticAge(payload, owner);
   const repo = new Repository(payload, owner);
   await new PrivacyService(repo).consent({ version: privacyPolicy().version, core: true, model: true, sensitive: true, external: false });
-  const ordinary = { minor: false, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: false };
+  const ordinary = { minor: false, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: false, single_choice_only: false };
   let generated = 0;
   const service = new GreetingService(repo, async r => {
     generated++;

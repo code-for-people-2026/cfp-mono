@@ -101,6 +101,83 @@ describe("网络响应不能靠泛型强信任", () => {
   });
 });
 
+describe("AJ 表单引用", () => {
+  it("新客户的展示引用与本次 controller requestId 一起发送", async () => {
+    vi.stubEnv("TARO_ENV", "weapp");
+    vi.stubGlobal("HELLO_API_ORIGIN", "https://example.test");
+    const id = "13b11c49-812c-4193-9b10-530d8ae94d09";
+    const presentation = {
+      presentationId: "urn:cfp:a-j-oker:turn:3",
+      revision: 1,
+      formId: "thought_record",
+    };
+    const input = {
+      text: "提交练习表单",
+      mediaIds: [],
+      formResponse: {
+        turnId: 3,
+        artifactId: "thought_record",
+        values: { intensity: 0 },
+        presentation,
+      },
+    };
+    const turn = {
+      id: 4,
+      input,
+      status: "completed",
+      mode: "platform",
+      greeting: "已接着回应",
+      createdAt: "2026-11-13",
+    };
+    mocks.request.mockImplementation(async ({ url }) => ({
+      statusCode: 200,
+      data: url.endsWith("/ag-ui")
+        ? [
+            { type: "RUN_STARTED", runId: id },
+            { type: "RUN_FINISHED", runId: id },
+          ]
+            .map((event) => `data: ${JSON.stringify(event)}\n\n`)
+            .join("")
+        : { turn },
+    }));
+    const api = await import("../src/chat/api");
+
+    await expect(api.generate(1, id, "platform", input)).resolves.toEqual(turn);
+
+    const run = mocks.request.mock.calls.find(([options]) =>
+      options.url.endsWith("/ag-ui"),
+    )?.[0];
+    expect(run.data.forwardedProps.clientEvent.action.context.submission).toEqual({
+      requestId: id,
+      ...presentation,
+    });
+  });
+
+  it("过期引用不会被改成 revision 1 后发出", async () => {
+    vi.stubEnv("TARO_ENV", "weapp");
+    vi.stubGlobal("HELLO_API_ORIGIN", "https://example.test");
+    const api = await import("../src/chat/api");
+
+    await expect(
+      api.generate(1, "13b11c49-812c-4193-9b10-530d8ae94d09", "platform", {
+        text: "提交过期表单",
+        mediaIds: [],
+        formResponse: {
+          turnId: 3,
+          artifactId: "thought_record",
+          values: { intensity: 0 },
+          presentation: {
+            presentationId: "urn:cfp:a-j-oker:turn:3",
+            revision: 2,
+            formId: "thought_record",
+          },
+        },
+      }),
+    ).rejects.toThrow(/版本不匹配/);
+    expect(mocks.request).not.toHaveBeenCalled();
+  });
+});
+
 it.each([[413, "申请完整副本"], [429, "一分钟后"], [401, "设备凭证无效"], [500, "稍后重试"]])("微信导出失败 %s 不分享错误文件，并解释可恢复的原因", async (statusCode, message) => {
   vi.stubEnv("TARO_ENV", "weapp");
   vi.stubGlobal("HELLO_API_ORIGIN", "https://example.test");

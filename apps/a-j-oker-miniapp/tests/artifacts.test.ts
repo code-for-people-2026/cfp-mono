@@ -8,6 +8,11 @@ const mocks = vi.hoisted(() => ({
   downloadFile: vi.fn(),
   setClipboardData: vi.fn(),
   showToast: vi.fn(),
+  getWindowInfo: vi.fn(() => ({ windowHeight: 800 })),
+  onKeyboardHeightChange: vi.fn(),
+  offKeyboardHeightChange: vi.fn(),
+  onWindowResize: vi.fn(),
+  offWindowResize: vi.fn(),
 }));
 vi.mock("@tarojs/taro", () => ({ default: mocks }));
 vi.mock("@tarojs/components", () => ({
@@ -27,16 +32,16 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-it("微信禁用动态函数仍可经 AG-UI 接收五类作品，查询确认保存，并回传零分表单", async () => {
+it("微信禁用动态函数仍可经 AG-UI 接收单个表单作品，查询确认保存，并回传零分表单", async () => {
   vi.stubEnv("TARO_ENV", "weapp");
   vi.stubGlobal("HELLO_API_ORIGIN", "https://example.test");
   const { generate } = await import("../src/chat/api");
-  const { toA2ui } = await import("@cfp/base-chat-protocol");
+  const { toAjA2ui } = await import("@cfp/a-j-oker-contracts");
   vi.stubGlobal("Function", function WechatFunction() {});
   const id = "13b11c49-812c-4193-9b10-530d8ae94d09";
   const events = [
     { type: "RUN_STARTED", runId: id },
-    ...toA2ui(1, artifacts).map((value) => ({
+    ...toAjA2ui(1, artifacts).map((value) => ({
       type: "CUSTOM",
       name: "a2ui",
       value,
@@ -75,7 +80,7 @@ it("微信禁用动态函数仍可经 AG-UI 接收五类作品，查询确认保
     progress.mock.lastCall![0].messages.filter(
       (message: object) => "createSurface" in message,
     ),
-  ).toHaveLength(5);
+  ).toHaveLength(1);
   const request = mocks.request.mock.calls[0][0];
   expect(request.dataType).toBe("text");
   expect(
@@ -84,7 +89,7 @@ it("微信禁用动态函数仍可经 AG-UI 接收五类作品，查询确认保
   expect(mocks.request.mock.lastCall![0].url).toContain(`/requests/${id}`);
 });
 
-it("真实表单组件保留零值，只在提交时发出 A2UI 动作，恢复后锁定已提交表单", async () => {
+it("真实表单组件保留零值，只在提交时发出 A2UI 动作，恢复后展示已确认答案", async () => {
   vi.stubEnv("TARO_ENV", "weapp");
   vi.stubGlobal("HELLO_API_ORIGIN", "https://example.test");
   const { Artifacts } = await import("../src/chat/artifacts");
@@ -102,9 +107,6 @@ it("真实表单组件保留零值，只在提交时发出 A2UI 动作，恢复�
     );
   });
   try {
-    await act(async () => {
-      renderer!.root.findByType("button").props.onClick();
-    });
     for (const field of renderer!.root.findAll((node) =>
       ["input", "textarea"].includes(String(node.type)),
     ))
@@ -124,28 +126,131 @@ it("真实表单组件保留零值，只在提交时发出 A2UI 动作，恢复�
     });
     expect(onAction).toHaveBeenCalledTimes(1);
     expect(onAction.mock.calls[0][0].action.context.values.intensity).toBe(0);
+    const responseId = "turn_1_thought_record";
+    const submittedValues = onAction.mock.calls[0][0].action.context.values;
+    const responses = { [responseId]: submittedValues };
+    expect(responses[responseId]).toBe(submittedValues);
     await act(async () => {
       renderer!.update(
         createElement(Artifacts, {
           turnId: 1,
           artifacts: form,
-          responses: {
-            turn_1_thought_record:
-              onAction.mock.calls[0][0].action.context.values,
-          },
+          responses,
           onAction,
         }),
       );
     });
-    await act(async () => {
-      renderer!.root.findByType("button").props.onClick();
+    const summary = renderer!.root.findByProps({
+      className: "artifact-form-summary",
     });
+    const rows = summary.findAllByProps({ className: "artifact-summary-row" });
+    const rowText = (row: (typeof rows)[number], className: string) =>
+      row.findAllByType("text").find((node) => node.props.className === className)!
+        .children.join("");
+    expect(
+      rows.map((row) => rowText(row, "artifact-summary-question")),
+    ).toEqual(["发生了什么？", "当时的想法", "当时的情绪", "情绪强度"]);
+    expect(rows.map((row) => rowText(row, "artifact-summary-answer"))).toEqual([
+      "会议说错数字，已更正",
+      "会议说错数字，已更正",
+      "会议说错数字，已更正",
+      "0",
+    ]);
+    expect(summary.findAllByType("input")).toHaveLength(0);
+    expect(summary.findAllByType("textarea")).toHaveLength(0);
+    expect(summary.findAllByType("button")).toHaveLength(0);
+  } finally {
+    act(() => renderer!.unmount());
+  }
+});
+
+it("历史多产物按 AJ 展示策略只保留一个对话表单且不额外输出卡片", async () => {
+  vi.stubEnv("TARO_ENV", "weapp");
+  vi.stubGlobal("HELLO_API_ORIGIN", "https://example.test");
+  const { Artifacts } = await import("../src/chat/artifacts");
+  const card = artifacts.find((item) => item.kind === "card")!;
+  const form = artifacts.find((item) => item.kind === "form")!;
+  let renderer: ReturnType<typeof create>;
+  await act(async () => {
+    renderer = create(
+      createElement(Artifacts, {
+        turnId: 8,
+        artifacts: [
+          card,
+          {
+            ...form,
+            id: "reason",
+            title: "辨认烦躁",
+            fields: [
+              {
+                id: "reason",
+                label: "烦躁更靠近哪一个？",
+                type: "select",
+                required: true,
+                allowOther: false,
+                options: [
+                  { id: "sleep", label: "没睡够" },
+                  { id: "work", label: "事情太多" },
+                ],
+              },
+            ],
+          },
+        ],
+        responses: {},
+        onAction: vi.fn().mockResolvedValue(undefined),
+      }),
+    );
+  });
+  try {
     expect(
       renderer!.root
         .findAllByType("button")
-        .find((node) => node.props.className?.includes("artifact-submit"))!
-        .props.disabled,
+        .filter((node) =>
+          String(node.props.className).includes("artifact-choice"),
+        ),
+    ).not.toHaveLength(0);
+    expect(
+      renderer!.root.findAll(
+        (node) => String(node.type) === "root-portal",
+      ),
+    ).toHaveLength(0);
+    expect(JSON.stringify(renderer!.toJSON())).toContain("辨认烦躁");
+    expect(JSON.stringify(renderer!.toJSON())).not.toContain("且动一下手");
+  } finally {
+    act(() => renderer!.unmount());
+  }
+});
+
+it("畸形历史作品只显示格式错误，不在渲染层抛出异常", async () => {
+  vi.stubEnv("TARO_ENV", "weapp");
+  vi.stubGlobal("HELLO_API_ORIGIN", "https://example.test");
+  const { Artifacts } = await import("../src/chat/artifacts");
+  const malformed = [
+    {
+      kind: "card",
+      id: "bad_card",
+      title: "标题",
+      body: { invalid: true },
+    },
+  ];
+  let renderer: ReturnType<typeof create>;
+  await act(async () => {
+    renderer = create(
+      createElement(Artifacts, {
+        turnId: 8,
+        artifacts: malformed,
+        responses: {},
+        onAction: vi.fn().mockResolvedValue(undefined),
+      }),
+    );
+  });
+  try {
+    expect(
+      renderer!.root
+        .findAllByType("text")
+        .some((node) => node.children.join("").includes("作品格式暂不支持")),
     ).toBe(true);
+    expect(JSON.stringify(renderer!.toJSON())).not.toContain("标题");
   } finally {
     act(() => renderer!.unmount());
   }

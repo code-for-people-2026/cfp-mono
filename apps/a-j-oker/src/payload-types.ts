@@ -67,6 +67,7 @@ export interface Config {
   };
   blocks: {};
   collections: {
+    'admin-initializations': AdminInitialization;
     'safety-cases': SafetyCase;
     'safety-alert-state': SafetyAlertState;
     'safety-evidence': SafetyEvidence;
@@ -80,6 +81,8 @@ export interface Config {
     'safety-evaluations': SafetyEvaluation;
     'agent-configs': AgentConfig;
     'knowledge-bases': KnowledgeBase;
+    'a2a-execution-tasks': A2AExecutionTask;
+    'a2a-request-ledgers': A2ARequestLedger;
     'privacy-profiles': PrivacyProfile;
     'wechat-identities': WechatIdentity;
     'age-profiles': AgeProfile;
@@ -99,6 +102,7 @@ export interface Config {
   };
   collectionsJoins: {};
   collectionsSelect: {
+    'admin-initializations': AdminInitializationsSelect<false> | AdminInitializationsSelect<true>;
     'safety-cases': SafetyCasesSelect<false> | SafetyCasesSelect<true>;
     'safety-alert-state': SafetyAlertStateSelect<false> | SafetyAlertStateSelect<true>;
     'safety-evidence': SafetyEvidenceSelect<false> | SafetyEvidenceSelect<true>;
@@ -112,6 +116,8 @@ export interface Config {
     'safety-evaluations': SafetyEvaluationsSelect<false> | SafetyEvaluationsSelect<true>;
     'agent-configs': AgentConfigsSelect<false> | AgentConfigsSelect<true>;
     'knowledge-bases': KnowledgeBasesSelect<false> | KnowledgeBasesSelect<true>;
+    'a2a-execution-tasks': A2AExecutionTasksSelect<false> | A2AExecutionTasksSelect<true>;
+    'a2a-request-ledgers': A2ARequestLedgersSelect<false> | A2ARequestLedgersSelect<true>;
     'privacy-profiles': PrivacyProfilesSelect<false> | PrivacyProfilesSelect<true>;
     'wechat-identities': WechatIdentitiesSelect<false> | WechatIdentitiesSelect<true>;
     'age-profiles': AgeProfilesSelect<false> | AgeProfilesSelect<true>;
@@ -162,6 +168,14 @@ export interface AdminAuthOperations {
     email: string;
     password: string;
   };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "admin-initializations".
+ */
+export interface AdminInitialization {
+  id: number;
+  key: string;
 }
 /**
  * 通过本资源的操作区受理、复核、处置或追加版本；原始记录只读。
@@ -253,6 +267,16 @@ export interface SafetyEvidence {
   excerpt?: string | null;
   digest: string;
   originalLength?: number | null;
+  provenance?: string | null;
+  conversation?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   purgedAt?: string | null;
   purgeReason?: string | null;
   updatedAt: string;
@@ -445,7 +469,7 @@ export interface SafetyEvaluation {
   createdAt: string;
 }
 /**
- * 一个心理流派对应一个 subagent；主 Agent 选择专家并整合回复。保存后下一轮对话生效。停用流派不会删除已有聊天。
+ * 一个心理流派对应一个专家；主 Agent 完成交接后由专家直接回复。新建专家任务使用最新设置，进行中的任务保留创建时的配置；停用流派从下一轮对话起生效，且不会删除已有聊天。
  *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "agent-configs".
@@ -471,6 +495,20 @@ export interface AgentConfig {
    * 可调整语气、方法和表单指导。系统仍固定执行权限、危机回应和工具约束。修改不会覆盖历史轮次。
    */
   prompt: string;
+  theme?: ('sage' | 'blue' | 'plum' | 'amber') | null;
+  preferredLayout?: ('reflection' | 'step_by_step' | 'action_plan') | null;
+  /**
+   * 展示在专家卡片名称下的一句话，说明这位专家能提供什么帮助。未填写或清空保存时使用内置默认。
+   */
+  subtitle?: string | null;
+  /**
+   * 运行时强制过滤。留空表示该专家不生成回应作品，只回复文字。
+   */
+  allowedComponents?: ('form' | 'card' | 'table' | 'code' | 'page' | 'image')[] | null;
+  /**
+   * 必须是“允许的回应作品”的子集；留空表示默认优先纯文字。
+   */
+  preferredComponents?: ('form' | 'card' | 'table' | 'code' | 'page' | 'image')[] | null;
   /**
    * 最多绑定两个。仅咨询这个 subagent 时读取，停用的知识库不会参与。
    */
@@ -508,6 +546,44 @@ export interface KnowledgeBase {
   hasApiKey?: boolean | null;
   clearApiKey?: boolean | null;
   encryptedApiKey?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "a2a-execution-tasks".
+ */
+export interface A2AExecutionTask {
+  id: number;
+  owner: string;
+  tenant: string;
+  agentId: string;
+  key: string;
+  taskId: string;
+  contextId: string;
+  state: number;
+  statusTimestamp?: string | null;
+  revision: number;
+  snapshot: import('@cfp/agent-a2a').Task;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "a2a-request-ledgers".
+ */
+export interface A2ARequestLedger {
+  id: number;
+  owner: string;
+  tenant: string;
+  agentId: string;
+  key: string;
+  requestIdentity: string;
+  fingerprint: string;
+  status: 'pending' | 'recorded' | 'failed';
+  taskId?: string | null;
+  contextId?: string | null;
+  revision: number;
   updatedAt: string;
   createdAt: string;
 }
@@ -696,8 +772,10 @@ export interface Greeting {
   status: 'running' | 'completed' | 'failed';
   input: import('@cfp/a-j-oker-contracts').Inspiration;
   greeting?: string | null;
+  handoffPreamble?: string | null;
   association?: string | null;
   approach?: string | null;
+  specialist?: import('./agent/specialist-state').SpecialistState | null;
   artifacts?: import('@cfp/base-chat-protocol').Artifact[] | null;
   imageGeneration?: import('./images/service').ImageState | null;
   model?: string | null;
@@ -857,6 +935,13 @@ export interface PayloadMigration {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "admin-initializations_select".
+ */
+export interface AdminInitializationsSelect<T extends boolean = true> {
+  key?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "safety-cases_select".
  */
 export interface SafetyCasesSelect<T extends boolean = true> {
@@ -928,6 +1013,8 @@ export interface SafetyEvidenceSelect<T extends boolean = true> {
   excerpt?: T;
   digest?: T;
   originalLength?: T;
+  provenance?: T;
+  conversation?: T;
   purgedAt?: T;
   purgeReason?: T;
   updatedAt?: T;
@@ -1064,6 +1151,11 @@ export interface AgentConfigsSelect<T extends boolean = true> {
   key?: T;
   enabled?: T;
   prompt?: T;
+  theme?: T;
+  preferredLayout?: T;
+  subtitle?: T;
+  allowedComponents?: T;
+  preferredComponents?: T;
   knowledgeBases?: T;
   updatedAt?: T;
   createdAt?: T;
@@ -1083,6 +1175,42 @@ export interface KnowledgeBasesSelect<T extends boolean = true> {
   hasApiKey?: T;
   clearApiKey?: T;
   encryptedApiKey?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "a2a-execution-tasks_select".
+ */
+export interface A2AExecutionTasksSelect<T extends boolean = true> {
+  owner?: T;
+  tenant?: T;
+  agentId?: T;
+  key?: T;
+  taskId?: T;
+  contextId?: T;
+  state?: T;
+  statusTimestamp?: T;
+  revision?: T;
+  snapshot?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "a2a-request-ledgers_select".
+ */
+export interface A2ARequestLedgersSelect<T extends boolean = true> {
+  owner?: T;
+  tenant?: T;
+  agentId?: T;
+  key?: T;
+  requestIdentity?: T;
+  fingerprint?: T;
+  status?: T;
+  taskId?: T;
+  contextId?: T;
+  revision?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -1222,8 +1350,10 @@ export interface GreetingsSelect<T extends boolean = true> {
   status?: T;
   input?: T;
   greeting?: T;
+  handoffPreamble?: T;
   association?: T;
   approach?: T;
+  specialist?: T;
   artifacts?: T;
   imageGeneration?: T;
   model?: T;

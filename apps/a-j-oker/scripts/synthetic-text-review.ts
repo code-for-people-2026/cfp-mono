@@ -9,7 +9,7 @@ export const ordinaryInteraction = {
   overuse: false,
   exit: false,
   forget_context: false,
-  image_requested: false,
+  image_requested: false, single_choice_only: false,
 } as const;
 
 export const imageInteraction = (imageRequested: boolean) => ({

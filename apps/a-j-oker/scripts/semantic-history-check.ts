@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { lexicalKeywords, semanticHistoryCorpus } from "./semantic-history-corpus";
 
-const interactionFields = ["minor", "crisis", "dependency", "overuse", "exit", "forget_context", "image_requested"] as const;
+const interactionFields = ["minor", "crisis", "dependency", "overuse", "exit", "forget_context", "image_requested", "single_choice_only"] as const;
 const regexIds = new Set(semanticHistoryCorpus.originalRegexes.map((row) => row.id));
 const caseById = new Map(semanticHistoryCorpus.cases.map((row) => [row.id, row]));
 const keywordValues = new Set(semanticHistoryCorpus.keywords.map((row) => row.value));
@@ -112,7 +112,7 @@ for (const row of semanticHistoryCorpus.cases) {
   );
   assert.ok(["allow", "block", "uncertain"].includes(row.expected.decision));
   assert.ok(["support", "outside", "unclear"].includes(row.expected.serviceScope));
-  assert.deepEqual(Object.keys(row.expected.interaction).sort(), [...interactionFields].sort(), `${row.id}: seven bools`);
+  assert.deepEqual(Object.keys(row.expected.interaction).sort(), [...interactionFields].sort(), `${row.id}: eight bools`);
   for (const flag of interactionFields) assert.equal(typeof row.expected.interaction[flag], "boolean", `${row.id}.${flag}`);
   assert.ok(row.keywords.every((word) => keywordValues.has(word) && row.input.includes(word)), `${row.id}: keyword references`);
   assert.ok(row.sourceRegexIds.every((id) => regexIds.has(id)), `${row.id}: source references`);
@@ -145,7 +145,7 @@ for (const row of syntheticReplacements) {
   assert.ok(row.keywords.length > 0, `${row.id}: provenance keywords`);
 }
 
-for (const flag of interactionFields) {
+for (const flag of interactionFields.filter((field) => field !== "single_choice_only")) {
   assert.ok(semanticHistoryCorpus.cases.some((row) => row.expected.interaction[flag]), `${flag}: positive case`);
 }
 for (let age = 0; age <= 17; age++) {

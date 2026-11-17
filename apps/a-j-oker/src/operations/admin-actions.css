@@ -13,6 +13,7 @@
 .safety-create summary { cursor: pointer; font-weight: 600; padding: 10px 0; }
 .safety-evidence { background: var(--theme-elevation-50); border: 1px solid var(--theme-elevation-200); padding: 16px; margin-bottom: 20px; overflow-wrap: anywhere; }
 .safety-evidence pre { white-space: pre-wrap; font: inherit; }
+.safety-evidence__trigger { border-left: 4px solid var(--theme-warning-500, #c87500); background: var(--theme-warning-50, #fff8e8); padding: 10px 12px; }
 .safety-list-tools { margin-bottom: 20px; }
 .safety-list-tools nav { display: flex; flex-wrap: wrap; gap: 16px; margin: 12px 0; }
 .safety-list-tools p { margin: 10px 0; }

@@ -1,7 +1,17 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
-import { artifactsSchema, CATALOG_ID, createRunReader, surfaceName, validateA2uiMessages, toA2ui, type ClientEvent } from "@cfp/base-chat-protocol";
+import {
+  artifactsSchema,
+  createRunReader,
+  type ClientEvent,
+} from "@cfp/base-chat-protocol";
+import {
+  AJ_CATALOG_ID,
+  ajClientEvent,
+  toAjA2ui,
+  validateAjA2uiMessages,
+} from "@cfp/a-j-oker-contracts";
 
 // Explicit remote test: creates a named test conversation and makes two paid model calls.
 const origin = process.env.HELLO_ORIGIN;
@@ -19,23 +29,25 @@ async function json(route: string, data?: unknown) {
 const ready = await json("/api/ready");
 assert.equal(ready.release, process.env.HELLO_RELEASE);
 const config = await json("/api/hello/config");
-assert.equal(config.protocols.catalogId, CATALOG_ID);
+assert.equal(config.protocols.catalogId, AJ_CATALOG_ID);
 assert.equal(config.advertisement.mode, "disabled");
 const session = await json("/api/hello/sessions", { title: "回应作品发布验收（合成测试数据）" });
 const timings: { firstEventMs: number; durationMs: number }[] = [];
-async function run(text: string, clientEvent?: ClientEvent) {
-  const runId = randomUUID();
+async function run(text: string, clientEvent?: ClientEvent, suppliedRunId?: string) {
+  const runId = suppliedRunId ?? randomUUID();
   const start = Date.now();
   let firstEventMs = 0;
   const result = await fetch(`${origin}/api/hello/ag-ui`, {
     method: "POST", headers: { ...headers, Accept: "text/event-stream" }, signal: AbortSignal.timeout(90_000),
-    body: JSON.stringify({ protocolVersion: "1.0", threadId: String(session.id), runId, tools: [], context: [], messages: [{ id: `user_${runId}`, role: "user", content: text }], forwardedProps: { mode: "platform", clientEvent, a2uiClientCapabilities: { supportedCatalogIds: [CATALOG_ID] } } }),
+    body: JSON.stringify({ protocolVersion: "1.0", threadId: String(session.id), runId, tools: [], context: [], messages: [{ id: `user_${runId}`, role: "user", content: text }], forwardedProps: { mode: "platform", clientEvent, a2uiClientCapabilities: { supportedCatalogIds: [AJ_CATALOG_ID] } } }),
   });
   assert.equal(result.status, 200);
   assert.match(result.headers.get("content-type") || "", /text\/event-stream/);
   const stream = result.body!.getReader();
   const decoder = new TextDecoder();
-  const reader = createRunReader(runId);
+  const reader = createRunReader(runId, undefined, {
+  catalogIds: [AJ_CATALOG_ID],
+});
   for (;;) {
     const chunk = await stream.read();
     if (chunk.done) break;
@@ -65,9 +77,19 @@ for (const artifact of artifacts.filter((item) => item.kind === "image" || item.
   assert.equal((await fetch(url)).status, 401);
 }
 const form = artifacts.find((item) => item.kind === "form")!;
-validateA2uiMessages(toA2ui(turn.id, artifacts));
+validateAjA2uiMessages(toAjA2ui(turn.id, artifacts));
 const values = Object.fromEntries(form.fields.map((field) => [field.id, field.type === "number" ? 0 : /想法|thought/.test(field.id + field.label) ? "担心一次失误等于什么都做不好" : /情绪|emotion/.test(field.id + field.label) ? "当时羞愧，现在平静一些" : "周会上说错一个数字，同事提醒后我已更正"]));
-await run("", { version: "v0.9.1", action: { name: "submit_form", surfaceId: surfaceName(turn.id, form.id), sourceComponentId: "submit", timestamp: new Date().toISOString(), context: { values } } });
+const formRequestId = randomUUID();
+await run(
+  "",
+  ajClientEvent({
+    turnId: turn.id,
+    artifactId: form.id,
+    values,
+    requestId: formRequestId,
+  }),
+  formRequestId,
+);
 const history = await json(`/api/hello/sessions/${session.id}`);
 assert.equal(history.length, 2);
 assert.equal(history[1].status, "completed");

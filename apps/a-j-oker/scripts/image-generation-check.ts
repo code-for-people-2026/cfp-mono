@@ -99,7 +99,7 @@ const store: ImageObjectStore = {
 };
 const allowText: Moderator = async request => {
   if (request.purpose === "image_generation") return imageReview(true);
-  if (request.interaction) return { ...(await syntheticTextReview(request)), interaction: { ...ordinaryInteraction, image_requested: true } };
+  if (request.interaction) return { ...(await syntheticTextReview(request)), interaction: { ...ordinaryInteraction, image_requested: true, single_choice_only: false } };
   return syntheticTextReview(request);
 };
 const allowImage = async () => ({ decision: "allow" as const, version: "synthetic-review", category: "test" });
@@ -111,7 +111,7 @@ try {
   const session = await service.createSession("生图集成验收");
   const input = { sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { mediaIds: [], text: "制作一张自我关怀心理支持图片，用窗台番茄作为装饰，提醒温柔对待自己" } };
   const progress: string[] = [];
-  const saved = await service.generateGreeting(input, (message) => progress.push(message));
+  const saved = await service.generateGreeting(input, (stage) => progress.push(stage.stepName));
   assert.equal(saved.status, "completed");
   assert.match(saved.association || "", /制图素材不代表已核实的本人状态/);
   // Simulate a suspended worker whose lease expires without its timer running.
@@ -310,14 +310,14 @@ try {
     }
     assert.equal(modelCalls, 0); assert.equal(submitted, before);
     const outsideImageReview: Moderator = async request => request.purpose === "image_generation"
-      ? { serviceScope: "outside" as const, interaction: { ...ordinaryInteraction, image_requested: true } }
+      ? { serviceScope: "outside" as const, interaction: { ...ordinaryInteraction, image_requested: true, single_choice_only: false } }
       : syntheticTextReview(request);
     const allowedMediaId = (await repo.all("media")).find(m => m.id !== imageRow.id && m.id !== unlinked.id)!.id;
     for (const verdict of [
       { name: "outside", review: outsideImageReview, status: 422, blocked: true },
       { name: "not-requested", review: (async () => imageReview(false)) as Moderator, status: 422, blocked: true },
       { name: "missing", review: (async () => undefined) as Moderator, status: 503, blocked: false },
-      { name: "unclear", review: (async () => ({ serviceScope: "unclear" as const, interaction: { ...ordinaryInteraction, image_requested: true } })) as Moderator, status: 503, blocked: false },
+      { name: "unclear", review: (async () => ({ serviceScope: "unclear" as const, interaction: { ...ordinaryInteraction, image_requested: true, single_choice_only: false } })) as Moderator, status: 503, blocked: false },
       { name: "support-alone", review: (async () => ({ serviceScope: "support" as const })) as Moderator, status: 503, blocked: false },
     ] as const) {
       const blockedRow = await repo.create("greetings", { sessionId: scopedSession.id, requestKey: randomUUID(), fingerprint: "scope-bypass", status: "running", mode: "platform", input: { mediaIds: [], text: "请制作一张计算卡" } });
