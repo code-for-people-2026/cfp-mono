@@ -94,8 +94,8 @@ const syntheticReviews = {
 try {
   const owner = { id: randomUUID(), auth: "cookie" as const };
   const repo = new Repository(payload, owner);
-  // Text-only rest cards exercise structured text artifacts; real image delivery is covered by image-generation-check.
-  const textArtifacts = artifacts.filter((artifact) => artifact.kind !== "image");
+  // A single structured form exercises text artifacts; real image delivery is covered by image-generation-check.
+  const textArtifacts = artifacts.filter((artifact) => artifact.kind === "form");
   const model = new ScriptedModel({
     greeting: "且把眼前的小事理清楚。",
     association: "回应作品链路验收",
@@ -117,7 +117,19 @@ try {
   assert.deepEqual(saved.artifacts, textArtifacts);
   assert.deepEqual((await service.history(session.id))[0].artifacts, textArtifacts);
   assert.equal((await service.generateGreeting(input)).id, saved.id);
-  assert.equal(model.requests.length, 3);
+  assert.equal(
+    model.requests.length,
+    2,
+    "协调者交接一次后，心理专家应直接提交方案，不再回协调者改写",
+  );
+  assert.ok(model.requests[0].toolsDict.cbt_agent);
+  assert.equal(
+    model.requests[0].toolsDict.submit_psychology_plan,
+    undefined,
+  );
+  assert.deepEqual(Object.keys(model.requests[1].toolsDict), [
+    "submit_psychology_plan",
+  ]);
   const executionSessions = await repo.list("adk-sessions");
   const specialistSession = executionSessions.find(
     (row) => row.snapshot.id === `${saved.id}:cbt`,
@@ -240,16 +252,16 @@ try {
   const history = await service.history(session.id);
   assert.equal(history.length, 2);
   assert.match(
-    JSON.stringify(model.requests[3].contents),
+    JSON.stringify(model.requests[2].contents),
     /发生了什么.*会议中说错/,
   );
   assert.ok(
-    !JSON.stringify(model.requests[3].contents).includes(
+    !JSON.stringify(model.requests[2].contents).includes(
       "客户端不能伪造字段说明",
     ),
   );
   assert.equal((await service.generateGreeting(args)).id, history[1].id);
-  assert.equal(model.requests.length, 6);
+  assert.equal(model.requests.length, 3);
   const otherSession = await service.createSession("另一个会话");
   await assert.rejects(
     () =>
@@ -416,8 +428,12 @@ try {
     },
   });
   assert.deepEqual(structured.input.formResponse?.values, structuredValues);
+  assert.equal(choiceModel.requests.length, 2);
+  assert.deepEqual(Object.keys(choiceModel.requests[1].toolsDict), [
+    "submit_psychology_plan",
+  ]);
   const modelInput = JSON.stringify(
-    choiceModel.requests.slice(3).map((request) => request.contents),
+    choiceModel.requests.slice(1).map((request) => request.contents),
   );
   for (const expected of ["有点累", "朋友", "散步", "写日记"])
     assert.ok(modelInput.includes(expected), `后端应保留标签：${expected}`);
@@ -435,7 +451,7 @@ try {
       }),
     /无权访问/,
   );
-  assert.equal(model.requests.length, 6);
+  assert.equal(model.requests.length, 3);
   const external = await service.acceptExternal({
     sessionId: session.id,
     requestId: randomUUID(),
@@ -444,10 +460,10 @@ try {
     output: {
       greeting: "外部生成的作品。",
       association: "外部声明",
-      artifacts,
+      artifacts: textArtifacts,
     },
   });
-  assert.deepEqual(external.artifacts, artifacts);
+  assert.deepEqual(external.artifacts, textArtifacts);
   const modernRequestId = randomUUID();
   const modernExternal = await service.acceptExternal({
     sessionId: session.id,
@@ -457,29 +473,7 @@ try {
     output: {
       greeting: "新版作品已保存。",
       association: "传输兼容",
-      artifacts: [
-        {
-          kind: "card",
-          id: "legacy_safe",
-          title: "兼容卡片",
-          body: "旧客户仍可读这段正文。",
-        },
-        {
-          kind: "table",
-          id: "scalar_table",
-          title: "标量表格",
-          columns: ["分数", "完成"],
-          rows: [[0, false]],
-        },
-        {
-          kind: "code",
-          id: "snippet",
-          title: "代码片段",
-          language: "text",
-          code: "hello",
-        },
-        choiceForm,
-      ],
+      artifacts: [choiceForm],
     },
   });
   const badExternalId = randomUUID();
@@ -574,14 +568,22 @@ try {
   };
   const legacyHistory = await readHistory(false);
   const currentHistory = await readHistory(true);
+  const legacyExternal = legacyHistory.find((turn) => turn.id === external.id);
+  assert.ok(legacyExternal);
+  assert.deepEqual(
+    legacyAjArtifactsSchema.parse(legacyExternal.artifacts),
+    textArtifacts,
+    "旧客户端仍应收到兼容的文本/数值表单",
+  );
   const legacyModern = legacyHistory.find((turn) => turn.id === modernExternal.id);
   const currentModern = currentHistory.find((turn) => turn.id === modernExternal.id);
   assert.ok(legacyModern && currentModern);
   assert.deepEqual(
     legacyAjArtifactsSchema.parse(legacyModern.artifacts),
-    [modernExternal.artifacts?.[0]],
+    [],
+    "旧客户端不应收到不兼容的结构化选项表单",
   );
-  assert.equal((currentModern.artifacts as unknown[]).length, 4);
+  assert.equal((currentModern.artifacts as unknown[]).length, 1);
   const legacyStructured = legacyHistory.find((turn) => turn.id === structured.id);
   assert.ok(legacyStructured?.input.text.includes("有点累"));
   assert.equal(legacyStructured?.input.formResponse, undefined);
@@ -605,13 +607,38 @@ try {
   assert.ok(legacySubmissionBody.turn);
   assert.deepEqual(
     legacyAjArtifactsSchema.parse(legacySubmissionBody.turn?.artifacts),
-    [modernExternal.artifacts?.[0]],
+    [],
   );
-  for (const kind of ["image", "page"]) {
+  const imageExternal = await service.acceptExternal({
+    sessionId: session.id,
+    requestId: randomUUID(),
+    input: { text: "保存历史图片作品" },
+    model: "test-client-image",
+    output: {
+      greeting: "图片作品已保存。",
+      association: "图片兼容",
+      artifacts: [artifacts.find((artifact) => artifact.kind === "image")!],
+    },
+  });
+  const pageExternal = await service.acceptExternal({
+    sessionId: session.id,
+    requestId: randomUUID(),
+    input: { text: "保存历史网页作品" },
+    model: "test-client-page",
+    output: {
+      greeting: "网页作品已保存。",
+      association: "网页兼容",
+      artifacts: [artifacts.find((artifact) => artifact.kind === "page")!],
+    },
+  });
+  for (const item of [
+    { kind: "image" as const, turnId: imageExternal.id, artifactId: "sun" },
+    { kind: "page" as const, turnId: pageExternal.id, artifactId: "rest" },
+  ]) {
     const segments = [
-      `artifact-${kind}`,
-      String(external.id),
-      kind === "image" ? "sun" : "rest",
+      `artifact-${item.kind}`,
+      String(item.turnId),
+      item.artifactId,
     ];
     const url = `http://127.0.0.1:3310/api/hello/${segments.join("/")}`;
     const result = await GET(
@@ -623,9 +650,9 @@ try {
     assert.equal(result.status, 200);
     assert.match(
       result.headers.get("content-type")!,
-      kind === "image" ? /image\/png/ : /text\/html/,
+      item.kind === "image" ? /image\/png/ : /text\/html/,
     );
-    if (kind === "page")
+    if (item.kind === "page")
       assert.match(
         result.headers.get("content-security-policy")!,
         /default-src 'none'/,
@@ -649,7 +676,7 @@ try {
     assert.equal(denied.status, 404);
   }
   console.log(
-    "✓ 四类文字作品经真实 ADK 工具保存；五类历史外部作品兼容，AG-UI/A2UI 表单往返、内容重建、幂等、历史恢复、跨会话/用户拒绝、外部产物及私有图片/网页读取通过。",
+    "✓ 结构化表单经真实 ADK 专家链保存；单作品外部协议与旧客户端过滤、AG-UI/A2UI 表单往返、内容重建、幂等、历史恢复、跨会话/用户拒绝、外部图片/网页读取通过。",
   );
 } finally {
   await payload.destroy();

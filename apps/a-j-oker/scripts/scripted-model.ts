@@ -21,6 +21,7 @@ export class ScriptedModel extends BaseLlm {
       ? this.output[Math.min(this.outputIndex, this.output.length - 1)]
       : this.output;
     const approach = output.approach;
+    const artifacts = Array.isArray(output.artifacts) ? output.artifacts : undefined;
     const consulted = request.contents.some((content) =>
       content.parts?.some(
         (part) => part.functionResponse?.name === `${approach}_agent`,
@@ -34,6 +35,14 @@ export class ScriptedModel extends BaseLlm {
         summary: "用于链路验证的固定方案",
         suggestions: ["测试建议"],
         needsImmediateSupport: false,
+        usedSourceIds: [],
+        reply: {
+          greeting: String(output.greeting ?? "测试模型固定回应"),
+          association: String(output.association ?? "测试链路"),
+          approach,
+          ...(artifacts ? { artifacts } : {}),
+        },
+        lifecycle: "continue",
       };
     } else if (
       typeof approach === "string" &&
@@ -45,6 +54,7 @@ export class ScriptedModel extends BaseLlm {
         request: "测试本流派的方案交接",
         urgency: "routine",
         knowledgeQuery: "认知重构",
+        userFacingIntro: "我会先请对应方法的心理专家接手这一步。",
       };
     } else {
       name = "save_greeting";

@@ -56,6 +56,7 @@ class ConfigurationModel extends BaseLlm {
                   request: "请用认知行为方法直接回应用户并结合已绑定资料。",
                   urgency: "routine",
                   knowledgeQuery: "认知重构",
+                  userFacingIntro: "我会先请认知行为方法的心理专家接着帮你整理想法。",
                 },
           },
         }],

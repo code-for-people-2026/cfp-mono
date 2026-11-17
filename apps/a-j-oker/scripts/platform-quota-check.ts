@@ -14,6 +14,7 @@ import {
 } from "@payloadcms/db-sqlite";
 import type { LlmRequest, LlmResponse } from "@google/adk";
 import { ScriptedModel } from "./scripted-model";
+import { GREETING_MAX_CALLS } from "../src/agent/limits";
 
 const worker = process.argv[2] === "--worker";
 const dir = worker
@@ -79,7 +80,7 @@ try {
     let accepted = 0;
     for (let i = 0; i < Number(process.argv[4]); i++) {
       try {
-        await reservePlatformCalls(payload, 9);
+        await reservePlatformCalls(payload, GREETING_MAX_CALLS);
         accepted++;
       } catch (error) {
         if (!(error instanceof Error && "status" in error)) throw error;
@@ -105,7 +106,14 @@ try {
       oldSession,
     );
     await (await import("../src/cms/seed")).seedAgents(payload);
-    process.env.HELLO_PLATFORM_DAILY_CALL_LIMIT = "18";
+    const twoGreetingsBudget = GREETING_MAX_CALLS * 2;
+    const compactionBudget = twoGreetingsBudget + 1;
+    const defaultProbeBudget = compactionBudget + 1;
+    const busyRetryBudget = defaultProbeBudget + 1;
+    const concurrentRunCount = 4;
+    const concurrentBudget = GREETING_MAX_CALLS * concurrentRunCount;
+    const concurrentAttemptsPerWorker = concurrentRunCount + 1;
+    process.env.HELLO_PLATFORM_DAILY_CALL_LIMIT = String(twoGreetingsBudget);
     delete process.env.HELLO_PRIVACY_CONTACT;
     assert.equal((await readiness()).status, 503, "missing privacy configuration must block readiness");
     process.env.HELLO_PRIVACY_CONTACT = "quota-test@example.invalid";
@@ -128,8 +136,8 @@ try {
       override async *generateContentAsync(
         input: LlmRequest,
       ): AsyncGenerator<LlmResponse> {
-        // Includes both coordinator and specialist calls, before any model work.
-        assert.equal(await used(), 9);
+        // Includes coordinator and expert-direct-reply calls before model work.
+        assert.equal(await used(), GREETING_MAX_CALLS);
         yield* super.generateContentAsync(input);
       }
     }
@@ -145,10 +153,10 @@ try {
     const session = await service.createSession();
     const first = request(session.id);
     const greeting = await service.generateGreeting(first);
-    assert.equal(model.requests.length, 3);
+    assert.equal(model.requests.length, 2);
     assert.equal((await service.generateGreeting(first)).id, greeting.id);
-    assert.equal(model.requests.length, 3);
-    assert.equal(await used(), 9);
+    assert.equal(model.requests.length, 2);
+    assert.equal(await used(), GREETING_MAX_CALLS);
 
     const failing = new GreetingService(makeRepo(), async () => {
       throw new Error("provider timeout");
@@ -159,7 +167,7 @@ try {
     );
     assert.equal(
       await used(),
-      18,
+      twoGreetingsBudget,
       "failures must not refund possibly billed work",
     );
     assert.equal(
@@ -167,7 +175,7 @@ try {
       200,
       "exhaustion is not a deployment failure",
     );
-    assert.equal(await used(), 18);
+    assert.equal(await used(), twoGreetingsBudget);
     const byokModel = new ScriptedModel();
     const third = new GreetingService(makeRepo(), (args) =>
       runGreeting(args, byokModel), undefined, undefined, { moderate: syntheticTextReview }
@@ -201,7 +209,7 @@ try {
     await external();
     assert.equal(
       await used(),
-      18,
+      twoGreetingsBudget,
       "BYOK and external artifacts do not use platform quota",
     );
 
@@ -216,13 +224,13 @@ try {
     });
     assert.equal(summaryCalls, 0);
     assert.equal((await context.view(session.id)).revision, 0);
-    process.env.HELLO_PLATFORM_DAILY_CALL_LIMIT = "19";
+    process.env.HELLO_PLATFORM_DAILY_CALL_LIMIT = String(compactionBudget);
     await context.compactPreview(session.id, compactionId, 0);
     await context.compactPreview(session.id, compactionId, 0);
     assert.equal(summaryCalls, 1);
     assert.equal(
       await used(),
-      19,
+      compactionBudget,
       "compaction and greeting share quota; retry is free",
     );
     await external();
@@ -241,7 +249,7 @@ try {
     assert.equal(summaryCalls, 2);
     assert.equal(
       await used(),
-      19,
+      compactionBudget,
       "BYOK compaction still works when platform is disabled",
     );
     await assert.rejects(reservePlatformCalls(payload, 1), { status: 429 });
@@ -267,11 +275,15 @@ try {
     }
     delete process.env.HELLO_PLATFORM_DAILY_CALL_LIMIT;
     assert.equal((await readiness()).status, 200);
-    assert.equal(await used(), 19, "health probes must not consume quota");
+    assert.equal(
+      await used(),
+      compactionBudget,
+      "health probes must not consume quota",
+    );
     await reservePlatformCalls(payload, 1);
     assert.equal(
       await used(),
-      20,
+      defaultProbeBudget,
       "missing configuration uses a finite default",
     );
     await assert.rejects(
@@ -316,7 +328,11 @@ try {
     try {
       await reservePlatformCalls(payload, 1);
       assert.equal(writer.inTransaction, false);
-      assert.equal(await used(), 21, "busy retries must not charge multiple times");
+      assert.equal(
+        await used(),
+        busyRetryBudget,
+        "busy retries must not charge multiple times",
+      );
       // A retry must not leave a failed statement holding the shared database.
       // Actually write: BEGIN/COMMIT alone would miss a retained reader lock.
       writer.transaction(() => {
@@ -331,15 +347,15 @@ try {
 
     // Model a new UTC day without modifying the trusted application clock.
     await db.run(sql`UPDATE platform_model_quotas SET day = '2000-01-01'`);
-    process.env.HELLO_PLATFORM_DAILY_CALL_LIMIT = "90";
+    process.env.HELLO_PLATFORM_DAILY_CALL_LIMIT = String(concurrentBudget);
     const counts = await Promise.all([
-      spawnWorker(12),
-      spawnWorker(12),
-      spawnWorker(12),
+      spawnWorker(concurrentAttemptsPerWorker),
+      spawnWorker(concurrentAttemptsPerWorker),
+      spawnWorker(concurrentAttemptsPerWorker),
     ]);
     assert.equal(
       counts.reduce((sum, count) => sum + count, 0),
-      10,
+      concurrentRunCount,
       "concurrent processes must reserve exactly the shared budget",
     );
     assert.equal(
@@ -353,7 +369,7 @@ try {
     });
     assert.deepEqual(
       rows.docs.map((row) => row.reservedCalls),
-      [21, 90],
+      [busyRetryBudget, concurrentBudget],
     );
     await db.run(
       sql`ALTER TABLE platform_model_quotas RENAME TO unavailable_quota`,
@@ -386,7 +402,7 @@ try {
       "health probes and failed storage access leave the ledger unchanged",
     );
     console.log(
-      "✓ new UTC day; 36 concurrent-process attempts admit only 10 runs; restart and unavailable ledger stay blocked",
+      `✓ new UTC day; ${concurrentAttemptsPerWorker * 3} concurrent-process attempts admit only ${concurrentRunCount} runs; restart and unavailable ledger stay blocked`,
     );
   }
 } finally {
