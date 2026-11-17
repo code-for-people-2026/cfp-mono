@@ -122,7 +122,13 @@ export function CaseActions({ row, administrator, userId }: { row: Row; administ
       setEvidence(undefined); setEvidence(await request(`cases/${row.id}/evidence`, body));
     }}><p>{!own && !administrator ? "请先领取案件，再按需查看证据。" : "访问须填写具体理由，访问记录会写入审计。"}</p></ActionPanel>
     {evidence && <div className="safety-evidence" role="status">{evidence.unavailable ? String(evidence.message) : <>
-      <h3>最小证据片段</h3><pre>{String(evidence.excerpt || "无可用正文")}</pre>
+      {evidence.provenance && <><h3>证据来源说明</h3><p>{String(evidence.provenance)}</p></>}
+      {evidence.conversation ? <>
+        <h3>触发对话快照（按时间顺序）</h3>
+        <ol>{((evidence.conversation as { messages?: { role: string; text: string; trigger?: boolean; truncated?: boolean; turnId?: number; timestamp?: string }[] }).messages || []).map((message, index) =>
+          <li key={index} className={message.trigger ? "safety-evidence__trigger" : undefined}><strong>{message.role === "user" ? "用户" : "助手"}{message.trigger ? "（触发消息）" : ""}</strong>{(message.turnId || message.timestamp) && <small>{message.turnId ? `轮次 #${message.turnId}` : ""}{message.turnId && message.timestamp ? " · " : ""}{message.timestamp || ""}</small>}<pre>{message.text}{message.truncated ? "\n[此消息已截断]" : ""}</pre></li>)}</ol>
+        {(() => { const truncation = (evidence.conversation as { truncation?: { omittedTurns?: number; anyTextTruncated?: boolean } }).truncation; return truncation && (truncation.omittedTurns || truncation.anyTextTruncated) ? <p>快照有界：更早的 {truncation.omittedTurns || 0} 个已完成轮次未纳入；过长文本会在对应消息中明确标注截断。</p> : null; })()}
+      </> : <><h3>原始证据片段</h3><p>{String(evidence.excerpt || "未保存证据片段")}</p><p>{String(evidence.transcriptUnavailable || "此证据不包含对话快照。")}</p></>}
       <small>原始字符数：{String(evidence.originalLength)} · SHA-256：{String(evidence.digest)}</small>
     </>}</div>}
     {actions.length > 0 && <ActionPanel title="案件处理" fields={[

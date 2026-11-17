@@ -3,7 +3,10 @@ export * from "./profile";
 export * from "./service-scope";
 export * from "./presentation";
 import { z } from "zod";
-import { legacyArtifactsSchema } from "@cfp/base-chat-protocol";
+import {
+  legacyArtifactsSchema,
+  presentationAvatarSchema,
+} from "@cfp/base-chat-protocol";
 import {
   approachSchema,
   formResponseSchema,
@@ -49,6 +52,11 @@ export const turnSchema = z.object({
   apiKey: z.string().min(10).max(256).optional(),
 });
 export const greetingSchema = replySchema;
+export const handoffPreambleSchema = z
+  .string()
+  .trim()
+  .min(12)
+  .max(320);
 export const externalSchema = z.object({
   sessionId: z.number().int().positive(),
   requestId: z.string().uuid(),
@@ -71,6 +79,7 @@ export const turnResultSchema = z.object({
   imageGeneration: z.object({ status: z.enum(["submitting", "pending", "stored", "failed", "blocked"]), canResume: z.boolean() }).nullish(),
   mode: modeSchema,
   greeting: z.string().nullish(),
+  handoffPreamble: handoffPreambleSchema.nullish(),
   error: z.string().nullish(),
   association: z.string().nullish(),
   approach: z.string().nullish(),
@@ -85,7 +94,11 @@ export const turnResultSchema = z.object({
       configurationRevision: z.string().min(1).max(256),
       theme: z.enum(["sage", "blue", "plum", "amber"]),
       layout: z.enum(["reflection", "step_by_step", "action_plan"]),
+      subtitle: z.string().trim().min(1).max(80).optional(),
       status: z.enum(["active", "completed", "unavailable"]),
+      // Opaque local-asset identity. Historical snapshots may predate it and
+      // remain valid; AJ clients resolve only references they explicitly bundle.
+      avatarReference: presentationAvatarSchema.shape.reference.optional(),
       sources: z.array(z.object({
         library: z.string().max(120),
         title: z.string().max(500),
@@ -149,7 +162,12 @@ export const credentialSchema = z.object({
 export const identitySchema = z.object({ owner: z.string() });
 export const completedSchema = z.object({ completed: z.boolean() });
 export const revokedSchema = z.object({ revoked: z.boolean() });
-export const errorSchema = z.object({ error: z.string() });
+export const errorSchema = z.object({
+  error: z.string(),
+  code: z.string().regex(/^[A-Z][A-Z0-9_]{1,63}$/).optional(),
+  retryable: z.boolean().optional(),
+  definitive: z.boolean().optional(),
+});
 
 export type Inspiration = z.output<typeof inputSchema>;
 export type Greeting = z.output<typeof greetingSchema>;

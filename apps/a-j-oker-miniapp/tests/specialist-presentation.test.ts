@@ -75,6 +75,7 @@ describe("AI 专家展示状态", () => {
     expect(specialistPresentationForTurn(turn(1))).toMatchObject({
       name: "林老师",
       role: "分步整理",
+      subtitle: "把发生的事，和心里的推测分开看",
       layout: "numbered",
       sources: [{ library: "练习库", title: "思路记录" }],
     });
@@ -83,6 +84,16 @@ describe("AI 专家展示状态", () => {
     expect(specialistPresentationForTurn(turn(3, {
       specialist: { ...specialist, status: "unavailable", sources: [] },
     }))).toBeUndefined();
+  });
+
+  it("配置过的专家副标题优先，旧快照回退到 AJ 内置默认", () => {
+    expect(
+      specialistPresentationForTurn(
+        turn(1, {
+          specialist: { ...specialist, subtitle: "先把一个念头写下来" },
+        }),
+      )?.subtitle,
+    ).toBe("先把一个念头写下来");
   });
 
   it("当前专家任务的最新表单可填写，更新表单会替代旧表单", () => {

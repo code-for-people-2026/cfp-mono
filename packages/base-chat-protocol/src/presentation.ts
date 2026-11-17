@@ -17,15 +17,31 @@ export const presentationRevisionSchema = z
   .min(0)
   .max(1_000_000_000_000);
 
+// An avatar is deliberately an opaque local-asset reference. Presentation
+// consumers resolve it through their own allowlist; this protocol never turns
+// model output into a URL or network fetch.
+export const presentationAvatarSchema = z
+  .object({
+    reference: z
+      .string()
+      .trim()
+      .regex(/^[a-z][a-z0-9._:-]{0,127}$/i),
+  })
+  .strict();
+
 export const presentationOriginSchema = z
   .object({
     id: z.string().trim().min(1).max(80),
     name: z.string().trim().min(1).max(80),
     role: z.string().trim().min(1).max(120),
+    // Optional one-line help description. The protocol only transports the
+    // text; consumers keep full control over branded wording and defaults.
+    subtitle: z.string().trim().min(1).max(120).optional(),
     revision: z.string().trim().min(1).max(256),
     theme: z.enum(["sage", "blue", "plum", "amber"]),
     layout: z.enum(["stacked", "numbered", "grouped"]),
     state: z.enum(["continuing", "completed", "unavailable"]),
+    avatar: presentationAvatarSchema.optional(),
     sources: z.array(z.object({
       library: z.string().trim().min(1).max(120),
       title: z.string().trim().min(1).max(500),
@@ -153,3 +169,4 @@ export function presentationFromLegacyArtifacts(options: {
 
 export type Presentation = z.output<typeof presentationSchema>;
 export type PresentationOrigin = z.output<typeof presentationOriginSchema>;
+export type PresentationAvatar = z.output<typeof presentationAvatarSchema>;

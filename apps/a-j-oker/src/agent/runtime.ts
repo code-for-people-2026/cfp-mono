@@ -5,15 +5,16 @@ import type { GeneratedImage } from "../images/service";
 import { Runner, FunctionTool, type BaseLlm, type RunAsyncToolRequest } from "@google/adk";
 import type { Part } from "@google/genai";
 import { Repository } from "../cms/repository";
-import { AppError, ContentReviewError, type Greeting, type Inspiration } from "../domain/contracts";
+import { AppError, ContentReviewError, ServiceProblemError, type GenerationProgress, type Greeting, type Inspiration } from "../domain/contracts";
 import { loadAgentConfiguration } from "./configuration";
 import { createGreetingAgent } from "./coordinator";
 import { createPsychologyTeam } from "./psychology-agents";
 import type { SpecialistState } from "./specialist-state";
 import { PayloadSessionService } from "./payload-session-service";
 import { DeepSeekModel } from "./deepseek-model";
+import { DeepSeekError } from "../models/deepseek";
 import { ContextService } from "../domain/context";
-import { COORDINATOR_MAX_CALLS } from "./limits";
+import { COORDINATOR_MAX_CALLS, MODEL_TRANSIENT_MAX_ATTEMPTS } from "./limits";
 import {
   AJ_A2A_TENANT,
   createInProcessPsychologyA2AFactory,
@@ -21,6 +22,11 @@ import {
 import { createPayloadA2AStorage } from "../cms/a2a-store";
 import { constrainedFormDeliveryError } from "./single-choice-delivery";
 import { KNOWLEDGE_METHODS } from "./knowledge-query";
+import { formResponseGuidance } from "./form-response-guidance";
+import {
+  isConfirmedCompletedA2AResponse,
+  loadA2AFaultPolicy,
+} from "./devtools-faults";
 
 import type { Greeting as GreetingRecord } from "../payload-types";
 
@@ -53,6 +59,8 @@ export type GenerationRequest = {
   executionId?: string;
   signal?: AbortSignal;
   activeSpecialist?: SpecialistState;
+  onStage?: (stage: GenerationProgress) => void;
+  saveHandoffPreamble: (preamble: string) => Promise<string>;
 };
 export type Generator = (request: GenerationRequest) => Promise<void>;
 
@@ -88,12 +96,55 @@ export async function runGreeting(
       },
     })),
   ];
+  const responseGuidance = formResponseGuidance(request.input);
+  const faultPolicy = await loadA2AFaultPolicy({ owner: request.repo.owner.id });
+  const logFault = (category: string, attempt: number) => {
+    console.info(
+      `aj a2a-recovery owner_id=${request.repo.owner.id} execution_id=${request.executionId ?? request.turnId} category=${category} attempt=${attempt}`,
+    );
+  };
+  let modelFaultConsumed = false;
   const model =
     modelOverride ||
     new DeepSeekModel({
       model: request.model,
       apiKey: request.apiKey,
+      retry: {
+        maxAttempts: MODEL_TRANSIENT_MAX_ATTEMPTS,
+        retryDelayMs: 100,
+        maxRetryDelayMs: 500,
+      },
     });
+  let activeModel = model;
+  if (
+    !modelOverride
+    && request.activeSpecialist
+    && faultPolicy.enabled
+    && faultPolicy.failFirstModelAttempt
+  ) {
+    activeModel = new DeepSeekModel({
+      model: request.model,
+      apiKey: request.apiKey,
+      retry: {
+        maxAttempts: MODEL_TRANSIENT_MAX_ATTEMPTS,
+        retryDelayMs: 100,
+        maxRetryDelayMs: 500,
+      },
+      beforeAttempt: ({ attempt }) => {
+        if (modelFaultConsumed) {
+          if (attempt === 2) logFault("model_retry", attempt);
+          return;
+        }
+        modelFaultConsumed = true;
+        logFault("model_fault_consumed", attempt);
+        throw new DeepSeekError(
+          "DeepSeek 请求失败（HTTP 503）",
+          "http",
+          503,
+        );
+      },
+    });
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), request.generateImage ? 180_000 : 75_000);
   const signal = request.signal ? AbortSignal.any([controller.signal, request.signal]) : controller.signal;
@@ -138,20 +189,48 @@ ${imagePromptConstraints()}`;
   const sessionService = new PayloadSessionService(request.repo);
   const executionId = request.executionId || String(request.turnId);
   const a2aStorage = createPayloadA2AStorage(request.repo, AJ_A2A_TENANT);
-  const { taskStore, requestLedger, recoverCompletedTask } = a2aStorage;
+  const { taskStore, requestLedger, recoverTask } = a2aStorage;
+  let transportAttempts = 0;
+  const transportIntercept = faultPolicy.enabled
+    && (faultPolicy.failFirstSendBeforeExecution || faultPolicy.loseFirstResponseAfterCommit)
+    ? async (input: RequestInfo | URL, init: RequestInit | undefined, next: typeof fetch) => {
+      const probe = new Request(input, init);
+      if (probe.method !== "POST") return next(input, init);
+      transportAttempts++;
+      logFault("transport_attempt", transportAttempts);
+      if (faultPolicy.failFirstSendBeforeExecution && transportAttempts === 1) {
+        logFault("pre_execution_transport_failure", transportAttempts);
+        throw new TypeError("local A2A recovery fixture");
+      }
+      const response = await next(input, init);
+      if (
+        faultPolicy.loseFirstResponseAfterCommit
+        && transportAttempts === 1
+        && await isConfirmedCompletedA2AResponse(response)
+      ) {
+        logFault("response_loss_after_commit", transportAttempts);
+        throw new TypeError("local A2A recovery fixture");
+      }
+      return response;
+    }
+    : undefined;
   const a2aFactory = createInProcessPsychologyA2AFactory({
     principal: { owner: request.repo.owner.id, tenant: AJ_A2A_TENANT },
     taskStore,
     requestLedger,
-    recoverCompletedTask,
+    recoverTask,
+    transportIntercept,
+    expertTelemetry: faultPolicy.enabled
+      ? event => logFault(event.category, event.attempt)
+      : undefined,
   });
   if (request.activeSpecialist) {
     const active = request.activeSpecialist;
     const current = configuration.specialists.find((item) => item.approach === active.expertId);
     if (!current) {
       await request.save({
-        greeting: "这位专家目前不可用，当前任务没有被假装完成。你已回到阿 J，可以继续说说现在最需要什么。",
-        association: "专家已停用或不可用，系统明确结束交接。",
+        greeting: "该专家配置当前已停用；本轮任务已明确结束，未生成专家方案。可继续由阿 J 回应，之后可在专家重新启用后再试。",
+        association: "专家配置停用；系统明确结束交接，未伪装成专家完成。",
         approach: "supportive",
         artifacts: [],
       }, { ...active, status: "unavailable", sources: [] });
@@ -164,12 +243,14 @@ ${imagePromptConstraints()}`;
       revision: active.configurationRevision,
       theme: active.theme,
       preferredLayout: active.layout,
+      subtitle: active.subtitle ?? current.subtitle,
+      avatarReference: active.avatarReference ?? current.avatarReference,
       allowedComponents: active.allowedComponents,
       preferredComponents: active.preferredComponents,
     };
     const directConfiguration = { ...configuration, specialists: [pinned] };
     const team = createPsychologyTeam({
-      model,
+      model: activeModel,
       configuration: directConfiguration,
       sessionService,
       userId: request.repo.owner.id,
@@ -177,11 +258,20 @@ ${imagePromptConstraints()}`;
       consultationExecutionId: String(request.turnId),
       inputParts: parts,
       signal,
+      onStage: request.onStage,
+      responseGuidance,
       a2a: a2aFactory,
+      localFaults: faultPolicy.enabled
+        ? {
+          rejectFirstTwoExpertSubmissions: faultPolicy.rejectFirstTwoExpertSubmissions,
+          onEvent: event => logFault(event.category, event.attempt),
+        }
+        : undefined,
       checkDelivery: value => constrainedFormDeliveryError(request, value)
         || restCardDeliveryError(imageAdmitted, value, generatedMediaId, imageDecision.refused),
       deliverExpert: async ({ plan }) => request.save(plan.reply!, {
         ...active,
+        ...(active.subtitle || !current.subtitle ? {} : { subtitle: current.subtitle }),
         status: plan.lifecycle === "complete" ? "completed" : "active",
         sources: plan.references.flatMap((source) =>
           source.excerpt && (source.readStatus === "snippet" || source.readStatus === "document")
@@ -197,6 +287,9 @@ ${imagePromptConstraints()}`;
         urgency: "routine",
         ...(current.knowledge ? { knowledgeQuery: KNOWLEDGE_METHODS[active.expertId][0] } : {}),
       });
+      if (outcome.status === "completed" && modelFaultConsumed) {
+        logFault("model_success", 1);
+      }
       if (outcome.status !== "completed")
         throw new AppError(503, "专家本轮未完成，任务仍保留，可稍后重试或返回阿 J");
       return;
@@ -217,7 +310,28 @@ ${imagePromptConstraints()}`;
     consultationExecutionId: String(request.turnId),
     inputParts: parts,
     signal,
+    onStage: request.onStage,
+    saveHandoffPreamble: async (preamble) => {
+      try {
+        return await request.saveHandoffPreamble(preamble);
+      } catch (error) {
+        if (
+          error instanceof ContentReviewError
+          || error instanceof ServiceProblemError
+          || (error instanceof AppError && error.status === 403)
+        )
+          controller.abort();
+        throw error;
+      }
+    },
+    responseGuidance,
     a2a: a2aFactory,
+    localFaults: faultPolicy.enabled
+      ? {
+        rejectFirstTwoExpertSubmissions: faultPolicy.rejectFirstTwoExpertSubmissions,
+        onEvent: event => logFault(event.category, event.attempt),
+      }
+      : undefined,
     checkDelivery: value => constrainedFormDeliveryError(request, value)
       || restCardDeliveryError(imageAdmitted, value, generatedMediaId, imageDecision.refused),
     save: async (value, specialist) => {
@@ -229,7 +343,12 @@ ${imagePromptConstraints()}`;
       if (imageInFlight) await imageInFlight;
       try { return await request.save(imageDecision.refused ? { ...value, greeting: "抱歉，这个图片请求不能执行，本次不会生成图片。", association: "原始图片请求已拒绝，不生成替代作品。", artifacts: [] } : value, specialist); }
       catch (error) {
-        if (error instanceof ContentReviewError || (error instanceof AppError && error.status === 403)) controller.abort();
+        if (
+          error instanceof ContentReviewError
+          || error instanceof ServiceProblemError
+          || (error instanceof AppError && error.status === 403)
+        )
+          controller.abort();
         throw error;
       }
     },

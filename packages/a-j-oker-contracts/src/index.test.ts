@@ -4,7 +4,9 @@ import {
   turnSchema,
   turnResultSchema,
   settingsSchema,
+  errorSchema,
   historySchema,
+  handoffPreambleSchema,
   memoryStatusSchema,
 } from "./index";
 
@@ -42,6 +44,17 @@ describe("跨端协议", () => {
     ).toThrow();
     expect(() => memoryStatusSchema.parse({ level: "unlimited" })).toThrow();
   });
+  it("保留服务端专家交接前导，但不接受未收敛的长文或空文", () => {
+    const preamble = "我听到了你说的害怕，正在邀请认知行为专家接着帮你。";
+    expect(
+      turnResultSchema.parse({ ...turn, handoffPreamble: preamble })
+        .handoffPreamble,
+    ).toBe(preamble);
+    expect(handoffPreambleSchema.safeParse("  ").success).toBe(false);
+    expect(handoffPreambleSchema.safeParse("过".repeat(321)).success).toBe(
+      false,
+    );
+  });
   it("外部 Agent 不能走平台生成请求", () => {
     expect(() =>
       turnSchema.parse({
@@ -51,5 +64,18 @@ describe("跨端协议", () => {
         mode: "external",
       }),
     ).toThrow();
+  });
+});
+it("错误载荷保留安全机器码和重试语义", () => {
+  expect(errorSchema.parse({
+    error: "服务暂时不可用，本次尚未开始生成；可稍后重试。",
+    code: "SERVICE_PROBLEM",
+    retryable: true,
+    definitive: true,
+  })).toEqual({
+    error: "服务暂时不可用，本次尚未开始生成；可稍后重试。",
+    code: "SERVICE_PROBLEM",
+    retryable: true,
+    definitive: true,
   });
 });

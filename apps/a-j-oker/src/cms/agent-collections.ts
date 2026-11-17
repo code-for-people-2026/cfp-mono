@@ -39,6 +39,7 @@ export const agentCollections: CollectionConfig[] = [
           if (operation === "create" && defaults) {
             data.theme ??= defaults.theme;
             data.preferredLayout ??= defaults.preferredLayout;
+            if ("subtitle" in defaults) data.subtitle ??= defaults.subtitle;
             data.allowedComponents ??= [...defaults.allowedComponents];
             data.preferredComponents ??= [...defaults.preferredComponents];
           }
@@ -149,6 +150,16 @@ export const agentCollections: CollectionConfig[] = [
           { label: "逐步提问", value: "step_by_step" },
           { label: "行动计划", value: "action_plan" },
         ],
+      },
+      {
+        name: "subtitle",
+        label: "专家副标题",
+        type: "text",
+        maxLength: 80,
+        admin: {
+          description:
+            "展示在专家卡片名称下的一句话，说明这位专家能提供什么帮助。未填写或清空保存时使用内置默认。",
+        },
       },
       {
         name: "allowedComponents",

@@ -15,6 +15,10 @@ import * as interaction from "./20261024_100000_interaction_safety";
 import * as feishuAlerts from "./20261024_120000_feishu_alerts";
 import * as a2aExecution from "./20261113_120000_a2a_execution";
 import * as expertHandoff from "./20261115_090000_expert_handoff";
+import * as expertSubtitle from "./20261116_090000_expert_subtitle";
+import * as expertHandoffPreamble from "./20261117_100000_handoff_preamble";
+import * as firstAdminLatch from "./20261117_150000_first_admin_latch";
+import * as ageReviewConversationEvidence from "./20261117_170000_age_review_conversation_evidence";
 
 export const migrations = [
   {
@@ -54,4 +58,8 @@ export const migrations = [
   { up: feishuAlerts.up, down: feishuAlerts.down, name: "20261024_120000_feishu_alerts" },
   { up: a2aExecution.up, down: a2aExecution.down, name: "20261113_120000_a2a_execution" },
   { up: expertHandoff.up, down: expertHandoff.down, name: "20261115_090000_expert_handoff" },
+  { up: expertSubtitle.up, down: expertSubtitle.down, name: "20261116_090000_expert_subtitle" },
+  { up: expertHandoffPreamble.up, down: expertHandoffPreamble.down, name: "20261117_100000_handoff_preamble" },
+  { up: firstAdminLatch.up, down: firstAdminLatch.down, name: "20261117_150000_first_admin_latch" },
+  { up: ageReviewConversationEvidence.up, down: ageReviewConversationEvidence.down, name: "20261117_170000_age_review_conversation_evidence" },
 ];

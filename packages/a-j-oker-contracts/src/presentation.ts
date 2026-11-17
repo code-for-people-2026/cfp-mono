@@ -11,6 +11,7 @@ import {
   formReferenceSchema,
   formValuesSchema,
   legacyArtifactsToA2ui,
+  presentationAvatarSchema,
   presentationOriginSchema,
   validateA2uiMessages,
   type A2uiMessage,
@@ -28,6 +29,18 @@ export const approachSchema = z.enum([
   "positive_psychology",
   "behavioral",
 ]);
+
+/** AJ's product-level fallback for expert snapshots saved before subtitles. */
+export const AJ_BUILT_IN_EXPERT_SUBTITLES = {
+  supportive: "先把你的感受接住，不急着给建议",
+  cbt: "把发生的事，和心里的推测分开看",
+  act: "带着当下的感受，靠近你在意的生活",
+  dbt: "情绪很满时，先稳住自己，再选下一步",
+  behavioral: "把想做的事，拆成五分钟内能开始的一小步",
+  solution_focused: "从已经有用的一点，找到下一小步",
+  self_compassion: "像关心朋友那样，试着关心自己",
+  positive_psychology: "从真实经历里，找到你的力量和连接",
+} as const satisfies Record<z.infer<typeof approachSchema>, string>;
 
 // Generation remains strict. Saved replay/history uses the bounded legacy decoder.
 // Reuse the generic element and integrity checks, but expose an array maximum
@@ -95,7 +108,9 @@ const specialistPresentationInputSchema = z.object({
   configurationRevision: z.string().min(1).max(256),
   theme: z.enum(["sage", "blue", "plum", "amber"]),
   layout: z.enum(["reflection", "step_by_step", "action_plan"]),
+  subtitle: z.string().trim().min(1).max(80).optional(),
   status: z.enum(["active", "completed", "unavailable"]),
+  avatarReference: presentationAvatarSchema.shape.reference.optional(),
   sources: z.array(z.object({
     library: z.string().max(120),
     title: z.string().max(500),
@@ -112,6 +127,7 @@ export function ajPresentationOrigin(value: unknown): PresentationOrigin {
     id: specialist.taskId,
     name: specialist.name,
     role: specialist.method,
+    ...(specialist.subtitle ? { subtitle: specialist.subtitle } : {}),
     revision: specialist.configurationRevision,
     theme: specialist.theme,
     layout: {
@@ -124,6 +140,9 @@ export function ajPresentationOrigin(value: unknown): PresentationOrigin {
       completed: "completed",
       unavailable: "unavailable",
     }[specialist.status],
+    ...(specialist.avatarReference
+      ? { avatar: { reference: specialist.avatarReference } }
+      : {}),
     sources: specialist.sources.flatMap((source) => {
       const library = source.library.trim();
       const title = source.title.trim();

@@ -302,10 +302,20 @@ it("full-config Payload A2A storage is private, isolated, durable, and atomic un
       id: "pending-task",
       contextId: "context-pending-task",
     });
+    await recreatedStore.save(task(WORKING, "pending-task"), alice);
+    expect(await recreatedLedger.recoverTask({
+      scope: { tenant: "aj-platform", owner: "alice", agentId: "cbt" },
+      requestIdentity: "pending-message",
+    })).toMatchObject({ id: "pending-task", status: { state: WORKING } });
     expect(await recreatedLedger.recoverCompletedTask({
       scope: { tenant: "aj-platform", owner: "alice", agentId: "cbt" },
       requestIdentity: "pending-message",
     })).toBeUndefined();
+    await recreatedStore.save(task(COMPLETED, "pending-task"), alice);
+    expect(await recreatedLedger.recoverTask({
+      scope: { tenant: "aj-platform", owner: "alice", agentId: "cbt" },
+      requestIdentity: "pending-message",
+    })).toMatchObject({ id: "pending-task", status: { state: COMPLETED } });
     const replay = await recreatedLedger.reserve(
       { tenant: "aj-platform", owner: "alice", agentId: "cbt" },
       "message-1",

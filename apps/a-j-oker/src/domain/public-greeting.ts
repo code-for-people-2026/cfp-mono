@@ -9,11 +9,15 @@ type PublicGreetingRow<T> = Omit<T, "imageGeneration" | "specialist"> & {
 };
 
 export function publicGreetingState<
-  T extends { imageGeneration?: unknown; status?: string; visibility?: string; specialist?: unknown },
+  T extends { imageGeneration?: unknown; status?: string; visibility?: string; specialist?: unknown; handoffPreamble?: unknown },
 >(row: T): PublicGreetingRow<T> {
   const projected = publicImageState(row) as Omit<T, "imageGeneration"> & {
     imageGeneration?: PublicGreetingRow<T>["imageGeneration"];
   };
+  if (projected.visibility === "quarantined") {
+    const { handoffPreamble: _withheld, ...safe } = projected;
+    return safe as PublicGreetingRow<T>;
+  }
   if (!projected.specialist) return projected as PublicGreetingRow<T>;
   const parsed = specialistStateSchema.safeParse(projected.specialist);
   if (!parsed.success) {

@@ -18,9 +18,13 @@ import { Repository, fingerprint } from "../cms/repository";
 import {
   AppError,
   ContentReviewError,
+  ServiceProblemError,
   externalSchema,
+  type GenerationProgress,
+  renderProgress,
   turnSchema,
   greetingSchema,
+  handoffPreambleSchema,
   type Greeting,
   type Mode,
   type Inspiration,
@@ -418,13 +422,13 @@ export class GreetingService {
       status: "completed",
     });
   }
-  async resumeImage(turnId: number, apiKey?: string, progress?: (message: string) => void) {
+  async resumeImage(turnId: number, apiKey?: string, progress?: (stage: GenerationProgress) => void) {
     const row = await this.repo.get("greetings", turnId);
     if (row.status === "completed") return row;
     if (!canResumeImage(row) || row.mode === "external") throw new AppError(409, "这次图片任务不能继续，请查看本轮状态");
     return this.generateGreeting({ sessionId: row.sessionId, requestId: String(row.requestKey).slice(this.repo.owner.id.length + 1), input: row.input, mode: row.mode, apiKey }, progress, row.id);
   }
-  async generateGreeting(value: unknown, progress?: (message: string) => void, resumeTurnId?: number) {
+  async generateGreeting(value: unknown, progress?: (stage: GenerationProgress) => void, resumeTurnId?: number) {
     const args = turnSchema.parse(value);
     const key =
       args.mode === "byok" ? args.apiKey : process.env.DEEPSEEK_API_KEY;
@@ -439,7 +443,7 @@ export class GreetingService {
     const release = await this.repo.acquire(args.sessionId);
     return release.run(async () => {
     let row: GreetingRecord | undefined;
-    let reviewFailure: ContentReviewError | undefined;
+    let reviewFailure: ContentReviewError | ServiceProblemError | undefined;
     const started = Date.now();
     try {
       const result = await this.begin(
@@ -514,6 +518,10 @@ export class GreetingService {
       if (args.mode === "platform") await reservePlatformCalls(this.repo.payload, GREETING_MAX_CALLS);
       const images = new ImageGenerationService(this.repo, this.media, this.moderate, this.imageReviewer, this.imageProvider);
       const imageState = readImageState(row);
+      // begin() has both authenticated this response against its source form
+      // and replaced keyword text with server-generated labels. A submission
+      // is therefore an answer turn, not a new request for that same form.
+      const validatedFormSubmission = Boolean(args.input.formResponse);
       const active = activeSpecialistFromTurns(
         (await this.repo.all("greetings", { sessionId: { equals: args.sessionId } })).filter((item) => item.id !== row!.id),
         forgottenThroughId,
@@ -532,16 +540,61 @@ export class GreetingService {
         existingImage: imageState?.status === "stored" && imageState.mediaId ? { mediaId: imageState.mediaId, title: imageState.input.title, alt: imageState.input.alt } : undefined,
         resumingImage: !!resumeTurnId,
         imageRequested: result.imageRequested,
-        singleChoiceOnly: result.singleChoiceOnly,
-        singleOpenQuestionOnly: result.singleOpenQuestionOnly,
+        singleChoiceOnly: validatedFormSubmission ? false : result.singleChoiceOnly,
+        singleOpenQuestionOnly: validatedFormSubmission ? false : result.singleOpenQuestionOnly,
         activeSpecialist,
+        onStage: progress,
+        saveHandoffPreamble: async (preamble) => {
+          const value = handoffPreambleSchema.parse(preamble);
+          const current = await this.repo.get("greetings", row!.id);
+          if (current.status !== "running")
+            throw new AppError(409, "本轮不再接受专家交接前导");
+          try {
+            await assertGenerationAllowed(this.repo.payload, this.repo.owner.id);
+            if (current.visibility === "quarantined")
+              throw new AppError(403, "此轮内容已隔离，不能继续发布");
+            if (current.handoffPreamble) {
+              if (current.handoffPreamble === value) return current.handoffPreamble;
+              throw new AppError(409, "本轮专家交接前导已保存，不能覆盖");
+            }
+            await this.moderate({
+              stage: "output",
+              mode: current.mode,
+              texts: [value],
+              context: String((current.input as Inspiration).text || ""),
+              requestId: `handoff-preamble-output:${row!.id}:${randomUUID()}`,
+              turnId: row!.id,
+              sessionId: Number(row!.sessionId),
+              apiKey: key ?? process.env.DEEPSEEK_API_KEY,
+            });
+            await this.repo.update("greetings", row!.id, {
+              handoffPreamble: value,
+            });
+            return value;
+          } catch (error) {
+            if (
+              error instanceof ContentReviewError
+              || error instanceof ServiceProblemError
+            )
+              reviewFailure = error;
+            throw error;
+          }
+        },
         executionId: resumeTurnId ? `${row.id}:${randomUUID()}` : undefined,
         save: async (output, specialist) => {
           try {
+            // Real render-preparation point: artifacts exist and now go
+            // through review/persistence before client presentation.
+            const stage = renderProgress(output.artifacts, !!specialist);
+            if (stage) progress?.(stage);
             return await this.complete(row!.id, output, key!, specialist);
           } catch (error) {
             // ADK may convert a thrown tool error to an event; preserve its safe verdict.
-            if (error instanceof ContentReviewError) reviewFailure = error;
+            if (
+              error instanceof ContentReviewError
+              || error instanceof ServiceProblemError
+            )
+              reviewFailure = error;
             throw error;
           }
         },
@@ -557,11 +610,17 @@ export class GreetingService {
         const saved = await this.repo.get("greetings", row.id);
         // 工具已经成功保存时，后续说明或事件失败不能把成功产物标为失败。
         if (saved.status === "completed") return saved;
+        const blockImage = (
+          error instanceof ContentReviewError
+          || reviewFailure instanceof ContentReviewError
+        ) && !(error instanceof ImageReviewUnavailableError)
+          && !(reviewFailure instanceof ImageReviewUnavailableError);
+        const effectiveFailure = reviewFailure ?? (error instanceof AppError ? error : undefined);
         await this.repo.update("greetings", row.id, {
           status: "failed",
-          error: error instanceof AppError ? error.message : "模型调用或保存失败，请检查配置后重试",
+          error: effectiveFailure?.message ?? "模型调用或保存失败，请检查配置后重试",
           durationMs: Date.now() - started,
-          ...((reviewFailure || error instanceof ContentReviewError) && !(reviewFailure instanceof ImageReviewUnavailableError) && !(error instanceof ImageReviewUnavailableError) && saved.imageGeneration
+          ...(blockImage && saved.imageGeneration
             ? { imageGeneration: { ...saved.imageGeneration, status: "blocked" } } : {}),
         });
       }

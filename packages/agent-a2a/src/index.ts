@@ -32,6 +32,11 @@ export {
   type A2AServerTransportOptions,
 } from "./server";
 export {
+  recoverA2ASendMessage,
+  type A2ASendRecoveryOutcome,
+  type RecoverA2ASendMessageOptions,
+} from "./recovery";
+export {
   A2APeerClient,
   A2APeerRegistry,
   A2A_PEER_CONFIG_SCHEMA_VERSION,

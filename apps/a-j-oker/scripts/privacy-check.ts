@@ -91,7 +91,7 @@ try {
   await assert.rejects(() => recoverOwner(payload, "x".repeat(43)), /恢复码无效/);
   await assert.rejects(() => authenticate(payload, new Request("http://localhost", { headers: { authorization: `Bearer ${recoveredTestCredential.token}` } })), /已过期/);
   const model = new ScriptedModel();
-  await runGreeting({ repo, turnId: 123456, sessionId: session.id, input: { text: "本轮生成中撤回", mediaIds: [] }, apiKey: "isolated-test", model: "isolated-test", readImage: async () => { throw new Error("unexpected image read"); }, save: async () => { await service.withdraw(); throw new AppError(403, "已撤回同意"); } }, model);
+  await runGreeting({ repo, turnId: 123456, sessionId: session.id, input: { text: "本轮生成中撤回", mediaIds: [] }, apiKey: "isolated-test", model: "isolated-test", readImage: async () => { throw new Error("unexpected image read"); }, saveHandoffPreamble: async (preamble) => preamble, save: async () => { await service.withdraw(); throw new AppError(403, "已撤回同意"); } }, model);
   assert.equal(model.requests.length, 1, "撤回后不继续向模型请求重试");
   assert.equal((await client.callTool({ name: "hello_list_sessions", arguments: {} })).isError, true);
   await client.close(); await server.close();

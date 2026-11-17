@@ -17,6 +17,7 @@ import { collectionViews } from "./presentation";
 import { MAX_STORED_IMAGE_BASE64_LENGTH } from "../domain/media-policy";
 import type { OwnedCollection } from "./repository";
 import { a2aCollections } from "./a2a-collections";
+import { guardAdminCreation } from "./first-admin";
 
 const admin: Access = ({ req }) => isAdministrator(req.user);
 const ownerRead: Access = ({ req }) => {
@@ -60,6 +61,19 @@ const owned = (
 });
 
 export const collections: CollectionConfig[] = [
+  {
+    slug: "admin-initializations",
+    admin: { hidden: true },
+    timestamps: false,
+    lockDocuments: false,
+    access: {
+      read: () => false,
+      create: () => false,
+      update: () => false,
+      delete: () => false,
+    },
+    fields: [{ name: "key", type: "text", required: true, unique: true }],
+  },
   ...operationsCollections,
   ...agentCollections,
   ...a2aCollections,
@@ -98,31 +112,12 @@ export const collections: CollectionConfig[] = [
       beforeDelete: [auditAdminDeletion],
       beforeChange: [
         protectLastAdministrator,
-        async ({ req, operation, data }) => {
+        guardAdminCreation,
+        async ({ req, data }) => {
           if (req.user?.collection === "admins") {
             if (!isAdministrator(req.user)) throw new APIError("账户与权限修改需要系统管理员", 403);
             return data;
           }
-          if (operation !== "create") throw new APIError("账户与权限修改需要系统管理员", 403);
-          const bootstrap =
-            process.env.HELLO_ADMIN_BOOTSTRAP === "true" ||
-            req.context.helloAdminBootstrap === true;
-          if (
-            !bootstrap ||
-            (
-              await req.payload.count({
-                collection: "admins",
-                overrideAccess: true,
-                req,
-              })
-            ).totalDocs > 0
-          ) {
-            throw new APIError(
-              "管理员注册未开放，请通过本地初始化命令创建首个管理员",
-              403,
-            );
-          }
-          data.role = "administrator";
           return data;
         },
       ],
@@ -135,15 +130,7 @@ export const collections: CollectionConfig[] = [
       delete: admin,
       create: async ({ req }) => {
         if (isAdministrator(req.user)) return true;
-        if (process.env.HELLO_ADMIN_BOOTSTRAP !== "true") return false;
-        return (
-          (
-            await req.payload.count({
-              collection: "admins",
-              overrideAccess: true,
-            })
-          ).totalDocs === 0
-        );
+        return req.context.helloFirstAdminRegistration === true;
       },
     },
     fields: [adminRoleField],
@@ -246,6 +233,13 @@ export const collections: CollectionConfig[] = [
       label: "吉祥话",
       type: "textarea",
       admin: { components: { Cell: "/src/cms/admin-cells#GreetingCell" } },
+    },
+    {
+      name: "handoffPreamble",
+      label: "专家交接前阿 J 说明",
+      type: "textarea",
+      maxLength: 320,
+      admin: { readOnly: true },
     },
     { name: "association", label: "联想依据", type: "textarea" },
     { name: "approach", label: "回应视角", type: "text" },

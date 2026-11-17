@@ -54,6 +54,10 @@ page {
 .presentation-origin-notice, .presentation-origin-name, .presentation-origin-role, .presentation-origin-sources { display: block; white-space: normal; overflow-wrap: anywhere; }
 .presentation-origin-header-block { padding-bottom: 9px; margin-bottom: 9px; border-bottom: 1px solid #dce5d9; }
 .presentation-origin-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.presentation-origin-identity { display: flex; flex: 1; align-items: center; min-width: 0; gap: 10px; }
+.presentation-origin-avatar { flex: none; width: 42px; height: 42px; border-radius: 50%; background: var(--chat-ui-accent-soft, #eaf0e5); overflow: hidden; }
+.presentation-origin-avatar-fallback { display: flex; align-items: center; justify-content: center; color: var(--origin-accent); font-size: 17px; font-weight: 700; line-height: 42px; text-align: center; }
+.presentation-origin-copy { min-width: 0; }
 .presentation-origin-name { font-weight: 650; }
 .presentation-origin-role, .presentation-origin-sources, .presentation-origin-notice { font-size: 11px; line-height: 1.7; }
 .presentation-origin-sources { margin-top: 6px; }

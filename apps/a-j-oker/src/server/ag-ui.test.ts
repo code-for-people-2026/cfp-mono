@@ -8,7 +8,7 @@ import {
   ajClientEvent,
 } from "@cfp/a-j-oker-contracts";
 import { artifacts } from "../../../../packages/base-chat-protocol/test/fixtures";
-import { AppError } from "../domain/contracts";
+import { AppError, ServiceProblemError } from "../domain/contracts";
 import { agentStream, readAgentInput } from "./ag-ui";
 
 const request = () => ({
@@ -139,6 +139,34 @@ describe("AG-UI 协议适配", () => {
     ).text();
     expect(wire).toContain("RUN_ERROR");
     expect(wire).not.toMatch(/RUN_FINISHED|secret-provider-body/);
+  });
+
+  it("服务故障通过 RUN_ERROR 保留机器码和重试语义", async () => {
+    const body = request();
+    const wire = await agentStream(
+      {
+        generateGreeting: async () => {
+          throw new ServiceProblemError(
+            503,
+            "服务暂时不可用，本次尚未开始生成。",
+            { code: "SERVICE_PROBLEM", retryable: true, definitive: true },
+          );
+        },
+      },
+      readAgentInput(body),
+    ).text();
+    const reader = createRunReader(body.runId);
+    let failure: unknown;
+    try {
+      reader.push(wire);
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({
+      code: "SERVICE_PROBLEM",
+      retryable: true,
+      definitive: true,
+    });
   });
   it("旧目录客户遇到已保存的新作品时保留文字和成功状态", async () => {
     const body = request();

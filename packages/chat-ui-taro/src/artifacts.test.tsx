@@ -88,9 +88,52 @@ it("localizes no-source origin state and keeps an unavailable return control dis
   expect(output).toContain("本次任务已完成");
   expect(output).toContain("本轮未使用可核对的知识库正文");
   expect(output).not.toContain("completed");
+  expect(renderer!.root.findByProps({ className: "presentation-origin-role" }).children.join(""))
+    .toBe("方法：分步整理 · 本次任务已完成");
   const button = renderer!.root.findByType("button");
   expect(button.props.disabled).toBe(true);
   expect(onExit).not.toHaveBeenCalled();
+
+  act(() => renderer!.unmount());
+  act(() => {
+    renderer = create(
+      <PresentationFrame
+        origin={{
+          ...expertOrigin,
+          state: "unavailable",
+          subtitle: "把发生的事，和心里的推测分开看",
+        }}
+      >
+        <TextAdapter>正文</TextAdapter>
+      </PresentationFrame>,
+    );
+  });
+  const unavailableRole = renderer!.root
+    .findByProps({ className: "presentation-origin-role" })
+    .children.join("");
+  expect(unavailableRole).toBe("把发生的事，和心里的推测分开看 · 当前不可用");
+  expect(unavailableRole).not.toContain("方法：");
+});
+
+it("uses a consumer avatar and falls back to the initial if the asset fails", () => {
+  act(() => {
+    renderer = create(
+      <PresentationFrame origin={expertOrigin} avatarSource="/local/expert.png">
+        <TextAdapter>正文</TextAdapter>
+      </PresentationFrame>,
+    );
+  });
+  const image = renderer!.root.findByType("image");
+  expect(image.props.src).toBe("/local/expert.png");
+  expect(renderer!.root.findAllByProps({
+    className: "presentation-origin-avatar presentation-origin-avatar-fallback",
+  })).toHaveLength(0);
+
+  act(() => image.props.onError());
+  expect(renderer!.root.findAllByType("image")).toHaveLength(0);
+  expect(renderer!.root.findByProps({
+    className: "presentation-origin-avatar presentation-origin-avatar-fallback",
+  }).children.join("")).toBe("林");
 });
 const TextAdapter = ({ aiGenerated, external, ...props }: ArtifactTextProps) =>
   createElement("text", {
@@ -193,6 +236,98 @@ it("shows a generic disabled form status without replacing a confirmed summary",
   expect(renderer!.root.findAllByProps({ className: "artifact-form-summary" }))
     .toHaveLength(1);
   expect(JSON.stringify(renderer!.toJSON())).not.toContain("此表单已失效");
+});
+
+it("prefills an unconfirmed persisted form without presenting it as submitted", async () => {
+  const form: Artifact = {
+    id: "retry_form",
+    title: "重试问题",
+    kind: "form",
+    description: "失败后保留原答案。",
+    submitLabel: "再试一次",
+    fields: [{ id: "answer", label: "回答", type: "text", required: true }],
+  };
+  const onAction = vi.fn(async (_action: ClientEvent) => undefined);
+  const render = (handler = onAction) => (
+    <Artifacts
+      config={config}
+      Host={NativeA2uiHost}
+      adapter={adapter}
+      identity={identity}
+      artifacts={[form]}
+      responses={{}}
+      draftResponses={{ surface_retry_form: { answer: "失败但保留" } }}
+      onAction={handler}
+    />
+  );
+  await act(async () => {
+    renderer = create(render());
+  });
+  const input = renderer!.root.findByType("input");
+  expect(input.props.value).toBe("失败但保留");
+  expect(input.props.disabled).toBeFalsy();
+  expect(renderer!.root.findByProps({
+    className: "control artifact-submit",
+  }).props.disabled).toBeFalsy();
+  expect(renderer!.root.findAllByProps({ className: "artifact-form-summary" }))
+    .toHaveLength(0);
+  expect(JSON.stringify(renderer!.toJSON())).not.toContain("已提交");
+
+  await act(async () => {
+    input.props.onInput({ detail: { value: "用户改写后的回答" } });
+  });
+  const rerenderedAction = vi.fn(async (_action: ClientEvent) => undefined);
+  await act(async () => {
+    renderer!.update(render(rerenderedAction));
+  });
+  expect(renderer!.root.findByType("input").props.value)
+    .toBe("用户改写后的回答");
+  await act(async () => {
+    renderer!.root.findByProps({
+      className: "control artifact-submit",
+    }).props.onClick();
+  });
+  expect(rerenderedAction).toHaveBeenCalledTimes(1);
+  expect(rerenderedAction.mock.lastCall![0]!.action.context.values).toEqual({
+    answer: "用户改写后的回答",
+  });
+  expect(renderer!.root.findAllByProps({ className: "artifact-form-summary" }))
+    .toHaveLength(0);
+});
+
+it("keeps local interactive answers across parent rerenders", async () => {
+  const form: Artifact = {
+    id: "live_form",
+    title: "实时问题",
+    kind: "form",
+    description: "回答保持本地状态。",
+    submitLabel: "提交",
+    fields: [{ id: "answer", label: "回答", type: "text", required: true }],
+  };
+  const onAction = vi.fn(async (_action: ClientEvent) => undefined);
+  const render = (handler = onAction) => (
+    <Artifacts
+      config={config}
+      Host={NativeA2uiHost}
+      adapter={adapter}
+      identity={identity}
+      artifacts={[form]}
+      responses={{}}
+      onAction={handler}
+    />
+  );
+  await act(async () => {
+    renderer = create(render());
+  });
+  const input = renderer!.root.findByType("input");
+  await act(async () => {
+    input.props.onInput({ detail: { value: "A" } });
+  });
+  const rerenderedAction = vi.fn(async (_action: ClientEvent) => undefined);
+  await act(async () => {
+    renderer!.update(render(rerenderedAction));
+  });
+  expect(renderer!.root.findByType("input").props.value).toBe("A");
 });
 
 it("lets a host override dynamic artifact preview and collection copy", async () => {
@@ -578,8 +713,10 @@ it.each([
     });
     expect(frameBefore.findByProps({ className: "presentation-origin-name" }).children.join(""))
       .toBe("AI 专家：林老师");
-    expect(frameBefore.findByProps({ className: "presentation-origin-role" }).children.join(""))
-      .toContain("方法：分步整理 · 正在继续");
+    const role = frameBefore.findByProps({ className: "presentation-origin-role" })
+      .children.join("");
+    expect(role).toBe("方法：分步整理");
+    expect(role).not.toContain("正在继续");
     expect(frameBefore.findByProps({ className: "presentation-origin-sources" }).children.join(""))
       .toContain("方法库 / 很长的移动端来源标题（已读片段）");
     expect(frameBefore.findAllByProps({ className: "artifact-field" })).toHaveLength(1);

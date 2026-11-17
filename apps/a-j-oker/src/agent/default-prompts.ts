@@ -1,4 +1,5 @@
 import { ARTIFACT_INSTRUCTION, COORDINATOR_INSTRUCTION } from "./instruction";
+import { AJ_BUILT_IN_EXPERT_SUBTITLES } from "@cfp/a-j-oker-contracts";
 import {
   PSYCHOLOGY_APPROACHES,
   PSYCHOLOGY_SAFETY,
@@ -25,6 +26,8 @@ export type ArtifactComponent = (typeof ARTIFACT_COMPONENTS)[number];
 export type ExpertPresentation = {
   theme: "sage" | "blue" | "plum" | "amber";
   preferredLayout: "reflection" | "step_by_step" | "action_plan";
+  avatarReference: string;
+  subtitle: string;
   allowedComponents: ArtifactComponent[];
   preferredComponents: ArtifactComponent[];
 };
@@ -33,48 +36,64 @@ const PRESENTATION_BY_APPROACH: Record<PsychologyApproach, ExpertPresentation> =
   supportive: {
     theme: "sage",
     preferredLayout: "reflection",
+    avatarReference: "aj-expert:supportive",
+    subtitle: AJ_BUILT_IN_EXPERT_SUBTITLES.supportive,
     allowedComponents: ["form", "card", "page"],
     preferredComponents: [],
   },
   cbt: {
     theme: "blue",
     preferredLayout: "step_by_step",
+    avatarReference: "aj-expert:cbt",
+    subtitle: AJ_BUILT_IN_EXPERT_SUBTITLES.cbt,
     allowedComponents: ["form", "card", "table", "page"],
     preferredComponents: ["form"],
   },
   act: {
     theme: "plum",
     preferredLayout: "reflection",
+    avatarReference: "aj-expert:act",
+    subtitle: AJ_BUILT_IN_EXPERT_SUBTITLES.act,
     allowedComponents: ["form", "card", "page"],
     preferredComponents: ["card"],
   },
   dbt: {
     theme: "amber",
     preferredLayout: "step_by_step",
+    avatarReference: "aj-expert:dbt",
+    subtitle: AJ_BUILT_IN_EXPERT_SUBTITLES.dbt,
     allowedComponents: ["form", "card", "page"],
     preferredComponents: ["card"],
   },
   behavioral: {
     theme: "blue",
     preferredLayout: "action_plan",
+    avatarReference: "aj-expert:behavioral",
+    subtitle: AJ_BUILT_IN_EXPERT_SUBTITLES.behavioral,
     allowedComponents: ["form", "card", "table", "page"],
     preferredComponents: ["form"],
   },
   solution_focused: {
     theme: "amber",
     preferredLayout: "step_by_step",
+    avatarReference: "aj-expert:solution_focused",
+    subtitle: AJ_BUILT_IN_EXPERT_SUBTITLES.solution_focused,
     allowedComponents: ["form", "card", "page"],
     preferredComponents: ["form"],
   },
   self_compassion: {
     theme: "plum",
     preferredLayout: "reflection",
+    avatarReference: "aj-expert:self_compassion",
+    subtitle: AJ_BUILT_IN_EXPERT_SUBTITLES.self_compassion,
     allowedComponents: ["form", "card", "page"],
     preferredComponents: [],
   },
   positive_psychology: {
     theme: "sage",
     preferredLayout: "action_plan",
+    avatarReference: "aj-expert:positive_psychology",
+    subtitle: AJ_BUILT_IN_EXPERT_SUBTITLES.positive_psychology,
     allowedComponents: ["form", "card", "page"],
     preferredComponents: ["card"],
   },

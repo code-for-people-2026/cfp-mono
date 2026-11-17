@@ -111,7 +111,7 @@ try {
   const session = await service.createSession("生图集成验收");
   const input = { sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { mediaIds: [], text: "制作一张自我关怀心理支持图片，用窗台番茄作为装饰，提醒温柔对待自己" } };
   const progress: string[] = [];
-  const saved = await service.generateGreeting(input, (message) => progress.push(message));
+  const saved = await service.generateGreeting(input, (stage) => progress.push(stage.stepName));
   assert.equal(saved.status, "completed");
   assert.match(saved.association || "", /制图素材不代表已核实的本人状态/);
   // Simulate a suspended worker whose lease expires without its timer running.

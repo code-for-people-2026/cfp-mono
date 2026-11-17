@@ -101,7 +101,12 @@ export class InteractionService {
       });
     }
     if (flags.minor) {
-      await new AgeService(this.payload, this.owner).requireAdditionalVerification();
+      await new AgeService(this.payload, this.owner).requireAdditionalVerification({
+        kind: "conversation",
+        triggerText: text,
+        sessionId,
+        requestId,
+      });
       throw new AppError(403, "你刚才提供的年龄信息与成年核验存在冲突，已暂停聊天、上传及外部连接。请通过设置→帮助与反馈申请年龄复核；隐私与删除入口仍可使用。若有紧急危险，请立即联系当地急救或警方，也可拨打人工联系电话 19925452049。");
     }
     if (flags.exit && !flags.crisis) return "已停止本次聊天。你可以直接离开页面；如需退出账号，可打开设置→隐私与数据。";

@@ -1,12 +1,17 @@
 import { z } from "zod";
 import lexicon from "../moderation/lexicon";
-import { completeDeepSeek, DEFAULT_MODEL, DeepSeekError, normalizedDeepSeekKey } from "../models/deepseek";
-import { ContentReviewError, ContentPendingReviewError } from "./contracts";
+import { completeDeepSeek, DEFAULT_MODEL, DeepSeekError, normalizedDeepSeekKey, type DeepSeekDiagnostic } from "../models/deepseek";
+import { AppError, ContentReviewError, ContentPendingReviewError } from "./contracts";
 import { createKeywordMatcher, normalizeKeywordText } from "./keyword-matcher";
 import type { Rule } from "../operations/policy";
 import { SERVICE_SCOPE_INSTRUCTION } from "./service-scope";
 
 const findKeywords = createKeywordMatcher(lexicon.words);
+class ModerationDiagnosticError extends Error {
+  constructor(readonly moderationDiagnostic: ModerationDiagnostic) {
+    super("moderation diagnostic");
+  }
+}
 const verdictSchema = z.object({
   decision: z.enum(["allow", "block", "uncertain"]),
   service_scope: z.enum(["support", "outside", "unclear"]).optional(),
@@ -29,6 +34,35 @@ export type ModerationVerdict = {
   serviceScope?: "support" | "outside" | "unclear";
   interaction?: InteractionAssessment;
 };
+export type ModerationDiagnosticPhase =
+  | "configuration"
+  | "quota"
+  | "timeout"
+  | "network"
+  | "http"
+  | "response"
+  | "verdict"
+  | "schema"
+  | "missing_field";
+export type ModerationDiagnostic = {
+  version: 1;
+  requestId: string;
+  sessionId?: number;
+  stage: "input" | "output";
+  model: string;
+  durationMs: number;
+  phase: ModerationDiagnosticPhase;
+  reason: string;
+  keywordCount: number;
+  timeout?: boolean;
+  httpStatus?: number;
+  responseStage?: "response_json" | "response_schema" | "envelope" | "verdict_json";
+  schemaPath?: string;
+  finishReason?: string;
+  missingField?: "service_scope" | "interaction";
+  transportCode?: string;
+  transportName?: string;
+};
 /**
  * A completed content rejection whose semantic fields were produced and
  * validated by the same reviewer response. Callers may use these fields for
@@ -36,13 +70,21 @@ export type ModerationVerdict = {
  */
 export class ModerationRejectionError extends ContentReviewError {
   constructor(error: ContentReviewError, readonly semanticVerdict: ModerationVerdict) {
-    super(error.status, error.message);
+    super(error.status, error.message, {
+      ...(error.code ? { code: error.code } : {}),
+      ...(error.retryable !== undefined ? { retryable: error.retryable } : {}),
+      ...(error.definitive !== undefined ? { definitive: error.definitive } : {}),
+    });
   }
 }
 /** A pending-review rejection carrying the same validated semantic assessment. */
 export class ModerationPendingReviewError extends ContentPendingReviewError {
   constructor(error: ContentPendingReviewError, readonly semanticVerdict: ModerationVerdict) {
-    super(error.message);
+    super(error.message, {
+      ...(error.code ? { code: error.code } : {}),
+      ...(error.retryable !== undefined ? { retryable: error.retryable } : {}),
+      ...(error.definitive !== undefined ? { definitive: error.definitive } : {}),
+    });
   }
 }
 export type SemanticModerationRejection = ModerationRejectionError | ModerationPendingReviewError;
@@ -66,6 +108,24 @@ export function assertImageGenerationReview(review: void | ModerationVerdict) {
   if (!semanticReview.data.interaction.image_requested)
     throw new ContentReviewError(422, "这条请求没有明确要求生成心理支持图片");
 }
+
+function safeSchemaPath(error: z.ZodError): string | undefined {
+  for (const issue of error.issues) {
+    const path = issue.path
+      .map((segment) => (typeof segment === "number" ? `[${segment}]` : String(segment)))
+      .join(".");
+    if (path && /^[A-Za-z0-9_[\].-]{1,80}$/.test(path)) return path;
+  }
+  return undefined;
+}
+
+const safeFinishReasons = new Set([
+  "content_filter",
+  "function_call",
+  "length",
+  "stop",
+  "tool_calls",
+]);
 
 export type ModerationRequest = {
   stage: "input" | "output";
@@ -99,20 +159,47 @@ texts[0] 是当前最新输入，优先于 context；context 只用于理解指�
 minor=true 仅当当前发言用户自述本人现在未满十八岁；这包括从明确的未来满十八岁时间推断当前仍未成年，无论间隔是明天、下个月、明年还是更久。历史年龄、已成年、他人年龄、角色台词、年龄讨论和虚构素材为 false。crisis=true 仅当当前用户正在或即将伤害自己、表达即时自杀意图、服药过量或处于同等眼前危险；求助预防知识、新闻、他人危险、过去经历、虚构角色和明确否定为 false。dependency=true 仅当当前用户要把现实关系替换为只依赖本 AI，或要求持续陪伴/断绝现实联系；工作必须依赖同事、亲密关系彼此依赖、讨论依赖概念为 false。overuse=true 仅当当前用户描述正在或即将连续过度使用本 AI 聊天、通宵聊天或明确请求陪聊整夜；过去使用、工作时长、素材中的人物时长为 false。exit=true 仅当当前用户现在明确要求结束或退出本次 AI 聊天；引用他人结束语、讨论结束话题、尚未决定或想结束其他活动为 false。forget_context=true 仅当当前用户明确要求本 AI 此后停止使用之前的对话或记忆；想忘记痛苦、讨论遗忘、要求删除数据、引用他人说法或否定忘记为 false。image_requested=true 仅当当前用户在当前语境中明确要求生成真实的心理支持图片，且 service_scope=support；引用、故事/新闻/案例素材、普通倾诉披露、仅要文字卡片、取消或否定生图为 false；service_scope=outside 时必须为 false；service_scope 仍须独立判断，不由本标志替代。用户当前明确委托制作心理支持、休息提醒或自我关怀卡片，即使未出现图片或画面字样，也按产品约定视为真实生图请求；明确只要文字、已取消或拒绝时除外，“只写一句”只限制卡内文案，引用、过去和第三人称素材仍为 false。single_choice_only=true 仅当当前用户明确要求只用一道可点击的单选题、一个单选问题或等价的严格单题单选交互来回应；普通表单、问卷、多个问题、未限制题数的“帮我选”、引用他人的这类要求、否定或取消单选题均为 false。single_open_question_only=true 仅当当前用户明确要求本轮只问一个开放式问题，并要求用内嵌表单或输入框作答；必须同时包含“只问一个”的数量约束和开放文本作答意图。仅说开放式问题、普通表单、问卷、未指定数量、引用或转述他人的要求、否定或取消该要求、以及用户提交上一份表单答案时均为 false。single_choice_only 与 single_open_question_only 都只约束当前最新输入触发的本轮交付，不从 context 或历史请求继承，也不延续到澄清后的下一轮或表单提交后的回应。产品帮助、账号、删除、提醒或年龄问题不改变这些标志，应按 service_scope=support 并由普通生成流程依据产品知识回答。`;
 
 export async function evaluateText(request: ModerationRequest, rule?: Rule, beforeReview?: () => Promise<void>) {
+  const startedAt = Date.now();
   const ignored = new Set((rule?.ignoredWords ?? []).map((word) => normalizeKeywordText(word).trim()));
   const keywords = [...new Set(request.texts.flatMap((text) => findKeywords(text, 20, ignored)))];
   if (rule?.extraWords.length) keywords.push(...request.texts.flatMap((text) => createKeywordMatcher(rule.extraWords)(text)));
   const model = process.env.HELLO_MODEL || DEFAULT_MODEL;
   const wantsServiceScope = request.serviceScope || request.purpose === "image_generation";
   const wantsInteraction = request.interaction || request.purpose === "image_generation";
-  const result = (decision: "allow" | "block" | "uncertain" | "unavailable" | "not_reviewed", category = "other", failure?: "configuration" | "admission" | "caller" | "provider", serviceScope?: "support" | "outside" | "unclear", interaction?: InteractionAssessment) => ({ decision, model, keywordCount: keywords.length, category, failure, ...(serviceScope ? { serviceScope } : {}), ...(interaction ? { interaction } : {}) });
+  const diagnostic = (phase: ModerationDiagnosticPhase, reason: string, details: Partial<ModerationDiagnostic> = {}): ModerationDiagnostic => ({
+    version: 1,
+    requestId: request.requestId,
+    ...(request.sessionId === undefined ? {} : { sessionId: request.sessionId }),
+    stage: request.stage,
+    model,
+    durationMs: Date.now() - startedAt,
+    phase,
+    reason,
+    keywordCount: keywords.length,
+    ...details,
+  });
+  const result = (decision: "allow" | "block" | "uncertain" | "unavailable" | "not_reviewed", category = "other", failure?: "configuration" | "admission" | "caller" | "provider", serviceScope?: "support" | "outside" | "unclear", interaction?: InteractionAssessment, failureDiagnostic?: ModerationDiagnostic) => ({ decision, model, keywordCount: keywords.length, category, failure, ...(serviceScope ? { serviceScope } : {}), ...(interaction ? { interaction } : {}), ...(failureDiagnostic ? { diagnostic: failureDiagnostic } : {}) });
   if (!keywords.length && rule?.mode === "keywords" && !wantsServiceScope && !wantsInteraction) return result("not_reviewed");
   const key = normalizedDeepSeekKey(request.apiKey);
-  if (!key) return result("unavailable", "other", "configuration");
+  if (!key) return result("unavailable", "other", "configuration", undefined, undefined, diagnostic("configuration", "api_key_invalid"));
   // Admission errors are known to precede any provider work. They must never
   // become content cases, regardless of whether quota or storage rejected them.
   try { await beforeReview?.(); }
-  catch { return result("unavailable", "other", "admission"); }
+  catch (error) {
+    const status = error instanceof AppError ? error.status : undefined;
+    return result(
+      "unavailable",
+      "other",
+      "admission",
+      undefined,
+      undefined,
+      diagnostic(
+        status === 429 ? "quota" : status === 503 ? "quota" : "configuration",
+        status === 429 ? "quota_exhausted" : status === 503 ? "quota_unavailable" : "admission_rejected",
+        status === undefined ? {} : { httpStatus: status },
+      ),
+    );
+  }
   try {
     const response = await completeDeepSeek({
       model,
@@ -123,22 +210,77 @@ export async function evaluateText(request: ModerationRequest, rule?: Rule, befo
       tools: [], tool_choice: "none", temperature: 0, response_format: { type: "json_object" }, max_tokens: 512,
     }, key, AbortSignal.timeout(15_000));
     const choice = response.choices[0];
-    if (choice.finish_reason !== "stop" || choice.message.tool_calls?.length) throw new Error("incomplete verdict");
-    const verdict = verdictSchema.parse(JSON.parse(choice.message.content || ""));
-    if (wantsServiceScope && verdict.decision === "allow" && !verdict.service_scope) throw new Error("missing service scope");
-    if (wantsInteraction && request.stage === "input" && !verdict.interaction) throw new Error("missing interaction assessment");
+    if (choice.finish_reason !== "stop" || choice.message.tool_calls?.length) {
+      throw new ModerationDiagnosticError(diagnostic(
+        "response",
+        "finish_reason",
+        safeFinishReasons.has(choice.finish_reason)
+          ? { finishReason: choice.finish_reason }
+          : {},
+      ));
+    }
+    let decoded: unknown;
+    try {
+      decoded = JSON.parse(choice.message.content || "");
+    } catch {
+      throw new ModerationDiagnosticError(
+        diagnostic("verdict", "verdict_json", { responseStage: "verdict_json" }),
+      );
+    }
+    const parsedVerdict = verdictSchema.safeParse(decoded);
+    if (!parsedVerdict.success) {
+      throw new ModerationDiagnosticError(diagnostic("schema", "verdict_schema", {
+        ...(safeSchemaPath(parsedVerdict.error)
+          ? { schemaPath: safeSchemaPath(parsedVerdict.error) }
+          : {}),
+      }));
+    }
+    const verdict = parsedVerdict.data;
+    if (wantsServiceScope && verdict.decision === "allow" && !verdict.service_scope) {
+      throw new ModerationDiagnosticError(
+        diagnostic("missing_field", "service_scope", { missingField: "service_scope" }),
+      );
+    }
+    if (wantsInteraction && request.stage === "input" && !verdict.interaction) {
+      throw new ModerationDiagnosticError(
+        diagnostic("missing_field", "interaction", { missingField: "interaction" }),
+      );
+    }
     return result(verdict.decision, verdict.category, undefined, verdict.service_scope, verdict.interaction);
   } catch (error) {
-    const caller = error instanceof DeepSeekError &&
-      (error.kind === "credential" || (error.status !== undefined && error.status >= 400 && error.status < 500));
-    return result("unavailable", "other", caller ? "caller" : "provider");
+    if (error instanceof DeepSeekError) {
+      const quota = error.status === 429;
+      const timeout = error.diagnostic.timeout || error.diagnostic.transportName === "TimeoutError" || error.diagnostic.transportCode === "ETIMEDOUT";
+      const phase = quota ? "quota" : error.kind === "http" ? "http" : timeout ? "timeout" : error.kind === "response" ? "response" : "network";
+      const reason = quota ? "provider_quota" : error.kind === "http" ? "http_status" : timeout ? "timeout" : error.kind === "response" ? error.diagnostic.responseStage ?? "response_schema" : error.diagnostic.transportName === "AbortError" ? "cancelled" : "network";
+      const failureDiagnostic = diagnostic(phase, reason, {
+        timeout,
+        ...(error.status === undefined ? {} : { httpStatus: error.status }),
+        ...(error.diagnostic.responseStage ? { responseStage: error.diagnostic.responseStage } : {}),
+        ...(error.diagnostic.schemaPath ? { schemaPath: error.diagnostic.schemaPath } : {}),
+        ...(error.diagnostic.transportCode ? { transportCode: error.diagnostic.transportCode } : {}),
+        ...(error.diagnostic.transportName ? { transportName: error.diagnostic.transportName } : {}),
+      });
+      const caller = error.kind === "credential" || (
+        error.kind === "http" &&
+        error.status !== undefined &&
+        error.status >= 400 &&
+        error.status < 500 &&
+        error.status !== 429 &&
+        error.status !== 408
+      );
+      return result("unavailable", "other", caller ? "caller" : "provider", undefined, undefined, failureDiagnostic);
+    }
+    if (error instanceof ModerationDiagnosticError)
+      return result("unavailable", "other", "provider", undefined, undefined, error.moderationDiagnostic);
+    return result("unavailable", "other", "provider", undefined, undefined, diagnostic("network", "provider_request_failed"));
   }
 }
 
 export const moderateText: Moderator = async (request) => {
   const verdict = await evaluateText(request);
   if (verdict.decision === "not_reviewed") return;
-  console.info(JSON.stringify({ event: "hello_content_review", version: lexicon.version, stage: request.stage, requestId: request.requestId, keywordCount: verdict.keywordCount, decision: verdict.decision, ...(verdict.interaction ? { interaction: verdict.interaction } : {}) }));
+  console.info(JSON.stringify({ event: "hello_content_review", version: lexicon.version, stage: request.stage, requestId: request.requestId, keywordCount: verdict.keywordCount, decision: verdict.decision, ...(verdict.interaction ? { interaction: verdict.interaction } : {}), ...(verdict.diagnostic ? { diagnostic: verdict.diagnostic } : {}) }));
   const semanticVerdict = {
     ...(verdict.serviceScope ? { serviceScope: verdict.serviceScope } : {}),
     ...(verdict.interaction ? { interaction: verdict.interaction } : {}),

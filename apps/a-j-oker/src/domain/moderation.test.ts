@@ -230,6 +230,73 @@ describe("命中后的语境复核", () => {
     complete.mockRejectedValue(new Error("private-test-key provider raw body"));
     await expect(moderateText(request)).rejects.toMatchObject({ status: 503, message: "内容审核暂未完成，请稍后重试" });
   });
+  it("加载动画测试输入零关键词时仍保留安全 finish_reason 诊断", async () => {
+    answer(JSON.stringify({
+      decision: "allow",
+      service_scope: "support",
+      interaction: {
+        minor: false, crisis: false, dependency: false, overuse: false,
+        exit: false, forget_context: false, image_requested: false,
+        single_choice_only: false, single_open_question_only: false,
+      },
+    }), "length");
+    const verdict = await evaluateText({
+      ...request,
+      texts: ["测试一下加载动画"],
+      serviceScope: true,
+      interaction: true,
+    }, defaultRule);
+    expect(verdict).toMatchObject({ keywordCount: 0, decision: "unavailable" });
+    expect(verdict.diagnostic).toMatchObject({
+      requestId: "test-request",
+      model: "deepseek-flash",
+      reason: "finish_reason",
+      finishReason: "length",
+    });
+    const logged = JSON.stringify(vi.mocked(console.info).mock.calls);
+    expect(logged).not.toContain("测试一下加载动画");
+    expect(logged).not.toContain(request.apiKey);
+  });
+  it("未知 finish_reason 与伪造诊断属性不进入安全诊断", async () => {
+    answer(JSON.stringify({
+      decision: "allow",
+      service_scope: "support",
+      interaction: {
+        minor: false, crisis: false, dependency: false, overuse: false,
+        exit: false, forget_context: false, image_requested: false,
+        single_choice_only: false, single_open_question_only: false,
+      },
+    }), "provider_invented_reason");
+    await expect(evaluateText({
+      ...request,
+      serviceScope: true,
+      interaction: true,
+    }, defaultRule)).resolves.toMatchObject({
+      decision: "unavailable",
+      diagnostic: {
+        reason: "finish_reason",
+      },
+    });
+
+    complete.mockRejectedValue(Object.assign(new Error("forged"), {
+      moderationDiagnostic: { version: 1, reason: "forged_secret" },
+    }));
+    await expect(evaluateText(request, defaultRule)).resolves.toMatchObject({
+      decision: "unavailable",
+      diagnostic: {
+        phase: "network",
+        reason: "provider_request_failed",
+      },
+    });
+    complete.mockRejectedValue(null);
+    await expect(evaluateText(request, defaultRule)).resolves.toMatchObject({
+      decision: "unavailable",
+      diagnostic: {
+        phase: "network",
+        reason: "provider_request_failed",
+      },
+    });
+  });
   it("语义审核先预扣一次调用，预算不足不访问供应商；未召回不扣额度", async () => {
     const reserve = vi.fn(async () => { throw new Error("quota exhausted"); });
     const blocked = await evaluateText(request, undefined, reserve);

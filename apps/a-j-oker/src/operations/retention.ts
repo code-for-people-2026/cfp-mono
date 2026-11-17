@@ -10,7 +10,7 @@ export async function eraseOperationsEvidence(payload: Payload, owner: string, r
     let erased = 0, held = 0;
     for (const row of cases) {
       if (row.legalHold) { held++; continue; }
-      await payload.update({ collection: "safety-evidence", overrideAccess: true, req, where: { caseId: { equals: row.id } }, data: { excerpt: null, digest: "erased", originalLength: null, purgedAt: new Date().toISOString(), purgeReason: reason } });
+      await payload.update({ collection: "safety-evidence", overrideAccess: true, req, where: { caseId: { equals: row.id } }, data: { excerpt: null, provenance: null, conversation: null, digest: "erased", originalLength: null, purgedAt: new Date().toISOString(), purgeReason: reason } });
       // Keep only non-content operational chronology. Original opaque owner is
       // retained for deletion retries / enforcement, within configured retention.
       await payload.update({ collection: "safety-cases", id: row.id, overrideAccess: true, req, data: { reply: null, reason: "关联正文已按数据权利请求清理", feedbackAt: null, revision: Number(row.revision) + 1 } });
@@ -29,7 +29,7 @@ export async function purgeExpiredEvidence(payload: Payload, apply = false, now 
       if (!evidence.docs.length) continue;
       count++;
       if (apply) {
-        await payload.update({ collection: "safety-evidence", id: evidence.docs[0].id, overrideAccess: true, req, data: { excerpt: null, digest: "erased", originalLength: null, purgedAt: now.toISOString(), purgeReason: "按案件受理时的期限到期清理" } });
+        await payload.update({ collection: "safety-evidence", id: evidence.docs[0].id, overrideAccess: true, req, data: { excerpt: null, provenance: null, conversation: null, digest: "erased", originalLength: null, purgedAt: now.toISOString(), purgeReason: "按案件受理时的期限到期清理" } });
         await audit(payload, "system:retention", "evidence.expired", `case:${row.id}`, "按案件受理时的期限清理最小证据", undefined, req);
       }
     }

@@ -18,7 +18,12 @@ export function failure(error: unknown) {
         ? "输入格式不正确，请检查内容和字段"
         : "服务暂时不可用，请稍后重试";
   return Response.json(
-    { error: message },
+    {
+      error: message,
+      ...(error instanceof AppError && error.code ? { code: error.code } : {}),
+      ...(error instanceof AppError && error.retryable !== undefined ? { retryable: error.retryable } : {}),
+      ...(error instanceof AppError && error.definitive !== undefined ? { definitive: error.definitive } : {}),
+    },
     { status, headers: { "Cache-Control": "no-store" } },
   );
 }

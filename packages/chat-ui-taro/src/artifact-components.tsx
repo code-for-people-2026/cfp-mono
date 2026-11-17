@@ -110,6 +110,13 @@ export type ArtifactProps = {
   disabledStatus?: string;
   onAction?: (action: ClientEvent) => Promise<void>;
   submitted?: boolean;
+  /** Confirmed server values remain authoritative and follow later updates. */
+  confirmedValues?: FormValues;
+  /**
+   * Recovered draft values are hydration-only. A new persisted snapshot may
+   * replace them, but recreating the same props must not undo local edits.
+   */
+  initialDraftValues?: FormValues;
   initialValues?: FormValues;
 };
 
@@ -133,6 +140,26 @@ const ArtifactContext = createContext<{
   error: string;
   submit: (dispatch: Dispatch, action: SubmitAction) => Promise<void>;
 } | null>(null);
+
+function formValueSignature(value: FormValue): string {
+  if (value && typeof value === "object") {
+    if ("unknown" in value) return JSON.stringify({ unknown: value.unknown });
+    if ("optionIds" in value) {
+      return JSON.stringify({
+        optionIds: value.optionIds,
+        otherText: value.otherText,
+      });
+    }
+  }
+  return JSON.stringify(value) ?? "undefined";
+}
+
+function formValuesSignature(values: FormValues): string {
+  return `{${Object.keys(values)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${formValueSignature(values[key])}`)
+    .join(",")}}`;
+}
 
 export function useArtifactState() {
   const context = useContext(ArtifactContext);
@@ -231,14 +258,19 @@ export function ArtifactState({
   disabledStatus,
   onAction,
   submitted,
+  confirmedValues,
+  initialDraftValues,
   initialValues,
   external = false,
   children,
 }: ArtifactProps & { surface: SurfaceModel; children: ReactNode }) {
   const modelValues = surface.dataModel.get("/values");
+  const authoritativeValues = confirmedValues ?? initialValues;
   const [values, setValues] = useState<FormValues>(() =>
-    initialValues
-      ? initialValues
+    authoritativeValues
+      ? authoritativeValues
+      : initialDraftValues
+        ? initialDraftValues
       : formValuesSchema.parse(modelValues || {}, { jitless: true }),
   );
   const [error, setError] = useState("");
@@ -249,6 +281,7 @@ export function ArtifactState({
   const actionHandler = useRef(onAction);
   actionHandler.current = onAction;
   const { labels } = useArtifactUi();
+  const hydratedDraftSignature = useRef<string>();
 
   useEffect(
     () => () => {
@@ -262,19 +295,29 @@ export function ArtifactState({
     const sync = (value: unknown) => {
       // Interactive local answers survive a history refresh. Confirmed answers
       // or read-only streams continue following the official data model.
-      if (initialValues || !onAction)
-        setValues(
-          initialValues ||
-            formValuesSchema.parse(value || {}, { jitless: true }),
-        );
+      if (!authoritativeValues && onAction) return;
+      setValues(
+        authoritativeValues ||
+          formValuesSchema.parse(value || {}, { jitless: true }),
+      );
     };
     sync(surface.dataModel.get("/values"));
     const subscription = surface.dataModel.subscribe("/values", sync);
     return () => subscription.unsubscribe();
-  }, [surface, initialValues, onAction]);
+  }, [surface, authoritativeValues, onAction]);
   useEffect(() => {
-    if (initialValues) surface.dataModel.set("/values", initialValues);
-  }, [surface, initialValues]);
+    if (!authoritativeValues) return;
+    setValues(authoritativeValues);
+    surface.dataModel.set("/values", authoritativeValues);
+  }, [surface, authoritativeValues]);
+  useEffect(() => {
+    if (authoritativeValues || !initialDraftValues) return;
+    const signature = formValuesSignature(initialDraftValues);
+    if (hydratedDraftSignature.current === signature) return;
+    hydratedDraftSignature.current = signature;
+    setValues(initialDraftValues);
+    surface.dataModel.set("/values", initialDraftValues);
+  }, [surface, authoritativeValues, initialDraftValues, onAction]);
   useEffect(() => {
     const subscription = surface.onAction.subscribe(async (action) => {
       if (!actionHandler.current) return;

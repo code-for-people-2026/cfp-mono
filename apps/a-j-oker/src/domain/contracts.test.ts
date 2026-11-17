@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { greetingSchema, inputSchema, turnSchema } from "./contracts";
+import {
+  greetingSchema,
+  inputSchema,
+  renderProgress,
+  turnSchema,
+} from "./contracts";
 import { checkOrigin } from "../server/auth";
 import { GREETING_INSTRUCTION } from "../agent/instruction";
 
@@ -32,6 +37,21 @@ describe("输入与行为契约", () => {
         input: { text: "你好" },
       }).success,
     ).toBe(false);
+  });
+  it("回应准备进度只声明已经知道的表面和专家", () => {
+    expect(renderProgress(undefined, true)).toBeUndefined();
+    expect(renderProgress([{ kind: "card" }], false)).toEqual({
+      stageId: "render",
+      stepName: "阿 J 先生正在准备回应作品",
+    });
+    expect(renderProgress([{ kind: "card" }], true)).toEqual({
+      stageId: "expert_render",
+      stepName: "正在给这段对话换上专家的颜色",
+    });
+    expect(renderProgress([{ kind: "card" }, { kind: "form" }], false)).toEqual({
+      stageId: "form_render",
+      stepName: "正在准备可以直接填写的小卡片",
+    });
   });
   it("写请求要求匹配来源", () => {
     expect(() =>

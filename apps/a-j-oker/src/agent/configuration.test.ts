@@ -10,6 +10,8 @@ describe("专家展示配置", () => {
   it("默认值由专家方法拥有，并且首选作品始终属于允许范围", () => {
     for (const config of DEFAULT_AGENT_CONFIGS) {
       expect(defaultAgentConfig(config.key)).toBe(config);
+      if (config.key !== "coordinator")
+        expect(config.avatarReference).toBe(`aj-expert:${config.key}`);
       expect(
         config.preferredComponents.every((kind) =>
           config.allowedComponents.includes(kind),
@@ -34,6 +36,15 @@ describe("专家展示配置", () => {
 
   it("只为缺失值加载方法默认值，显式空数组保留纯文字/禁用作品语义", () => {
     expect(
+      resolveExpertPresentation("cbt", { subtitle: "  " }).subtitle,
+    ).toBe("把发生的事，和心里的推测分开看");
+    expect(
+      resolveExpertPresentation("cbt", { subtitle: null }).subtitle,
+    ).toBe("把发生的事，和心里的推测分开看");
+    expect(
+      resolveExpertPresentation("cbt", { subtitle: "配置的副标题" }).subtitle,
+    ).toBe("配置的副标题");
+    expect(
       resolveExpertPresentation("cbt", {
         allowedComponents: [],
         preferredComponents: [],
@@ -41,6 +52,7 @@ describe("专家展示配置", () => {
     ).toMatchObject({
       theme: "blue",
       preferredLayout: "step_by_step",
+      avatarReference: "aj-expert:cbt",
       allowedComponents: ["form", "card", "table", "page"],
       preferredComponents: ["form"],
     });
@@ -48,6 +60,7 @@ describe("专家展示配置", () => {
       resolveExpertPresentation("cbt", {
         theme: "blue",
         preferredLayout: "step_by_step",
+        avatarReference: "aj-expert:act",
         allowedComponents: [],
         preferredComponents: [],
       }),

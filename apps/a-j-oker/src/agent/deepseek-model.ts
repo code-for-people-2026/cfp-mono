@@ -2,6 +2,7 @@ import { BaseLlm, type LlmRequest, type LlmResponse } from "@google/adk";
 import type { Part } from "@google/genai";
 import { z } from "zod";
 import {
+  DeepSeekError,
   completeDeepSeek,
   jsonObjectSchema,
   type JsonObject,
@@ -162,8 +163,38 @@ export function toDeepSeekRequest(
 }
 
 export class DeepSeekModel extends BaseLlm {
-  constructor(private readonly settings: { model: string; apiKey: string }) {
+  constructor(private readonly settings: {
+    model: string;
+    apiKey: string;
+    retry?: { maxAttempts: number; retryDelayMs?: number; maxRetryDelayMs?: number };
+    beforeAttempt?: (attempt: {
+      attempt: number;
+      request: ModelRequest;
+    }) => void | Promise<void>;
+  }) {
     super({ model: settings.model });
+  }
+
+  private static async wait(
+    delay: number,
+    signal: AbortSignal | undefined,
+  ): Promise<void> {
+    if (signal?.aborted) {
+      throw signal.reason ?? new DOMException("The model retry was aborted", "AbortError");
+    }
+    if (delay === 0) return;
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve();
+      }, delay);
+      const onAbort = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+        reject(signal!.reason ?? new DOMException("The model retry was aborted", "AbortError"));
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
   }
 
   async *generateContentAsync(
@@ -173,11 +204,36 @@ export class DeepSeekModel extends BaseLlm {
   ): AsyncGenerator<LlmResponse> {
     if (stream) throw new Error("此示例未实现流式模型响应");
     const input = toDeepSeekRequest(request, this.model);
-    const response = await completeDeepSeek(
-      input,
-      this.settings.apiKey,
-      signal,
-    );
+    const maxAttempts = this.settings.retry?.maxAttempts ?? 1;
+    if (!Number.isInteger(maxAttempts) || maxAttempts < 1) {
+      throw new Error("模型重试次数必须是正整数");
+    }
+    const initialDelay = this.settings.retry?.retryDelayMs ?? 0;
+    const maxDelay = this.settings.retry?.maxRetryDelayMs ?? initialDelay;
+    if (
+      !Number.isFinite(initialDelay) || initialDelay < 0
+      || !Number.isFinite(maxDelay) || maxDelay < initialDelay
+    ) throw new Error("模型重试等待必须是有效上界");
+    const retryable = (error: unknown) =>
+      error instanceof DeepSeekError
+      && (error.kind === "transport"
+        || (error.kind === "http" && [408, 429, 500, 502, 503, 504].includes(error.status ?? 0)));
+    let response;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        signal?.throwIfAborted();
+        await this.settings.beforeAttempt?.({ attempt, request: input });
+        response = await completeDeepSeek(input, this.settings.apiKey, signal);
+        break;
+      } catch (error) {
+        if (attempt >= maxAttempts || signal?.aborted || !retryable(error)) throw error;
+        const delay = Math.min(
+          maxDelay,
+          Math.floor(initialDelay * 2 ** (attempt - 1)),
+        );
+        await DeepSeekModel.wait(delay, signal);
+      }
+    }
     const choice = response.choices[0];
     if (!["stop", "tool_calls"].includes(choice.finish_reason))
       throw new Error("模型输出未完整结束");

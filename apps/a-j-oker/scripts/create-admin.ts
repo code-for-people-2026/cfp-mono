@@ -8,24 +8,18 @@ if (!email || !password || password.length < 12) {
   process.exit(2);
 }
 const { cms } = await import("../src/cms/client");
+const { FirstAdminUnavailableError, registerFirstAdmin } = await import("../src/cms/first-admin");
 const payload = await cms();
 try {
-  if (
-    (await payload.count({ collection: "admins", overrideAccess: true }))
-      .totalDocs > 0
-  ) {
-    console.error("已有管理员，拒绝通过初始化脚本添加或重置。");
-    process.exitCode = 1;
-  } else {
-    await payload.create({
-      collection: "admins",
-      overrideAccess: true,
-      context: { helloAdminBootstrap: true },
-      data: { email, password, role: "administrator" },
-    });
+  try {
+    await registerFirstAdmin(payload, { email, password, confirmPassword: password });
     console.log(
       "已创建本地 CMS 管理员。请清除初始化环境变量，通过 /admin 登录。",
     );
+  } catch (error) {
+    if (!(error instanceof FirstAdminUnavailableError)) throw error;
+    console.error("管理员初始化已关闭，拒绝添加或重置。");
+    process.exitCode = 1;
   }
 } finally {
   await payload.destroy();

@@ -113,7 +113,12 @@ export class OperationsService {
       const evidence = (await this.payload.find({ collection: "safety-evidence", overrideAccess: true, req, limit: 1, where: { caseId: { equals: id } } })).docs[0];
       await audit(this.payload, `admin:${user.id}`, "evidence.read", `case:${id}`, reason, undefined, req);
       if (!evidence || evidence.purgedAt || (!row.legalHold && row.retainUntil && String(row.retainUntil) < new Date().toISOString())) return { unavailable: true, message: "最小证据已清理或到期" };
-      return { excerpt: evidence.excerpt, digest: evidence.digest, originalLength: evidence.originalLength };
+      return {
+        excerpt: evidence.excerpt, digest: evidence.digest, originalLength: evidence.originalLength,
+        provenance: evidence.provenance || null,
+        conversation: evidence.conversation || null,
+        transcriptUnavailable: evidence.conversation ? undefined : "此案件创建时未保存触发会话信息（旧版或非对话来源），不能从其他会话猜测或补填。",
+      };
     });
   }
   async action(user: TypedUser, id: number, value: unknown) {

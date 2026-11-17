@@ -10,8 +10,10 @@ import {
   type A2ARequestLedger,
   type AuthenticatedA2APrincipal,
   type ScopedA2ATaskStore,
+  type SendMessageRequest,
   type Task,
   type TaskState,
+  recoverA2ASendMessage,
 } from "@cfp/agent-a2a";
 
 import type { PsychologyApproach } from "./psychology";
@@ -73,6 +75,19 @@ export type PsychologyA2ACompletedTaskRecovery = (
   input: PsychologyA2ACompletedTaskRecoveryInput,
 ) => Promise<Task | undefined>;
 
+export type PsychologyA2ADurableTaskRecovery = PsychologyA2ACompletedTaskRecovery;
+
+export type PsychologyA2ATransportIntercept = (
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  next: typeof fetch,
+) => Promise<Response>;
+
+export type PsychologyA2ATelemetry = (event: {
+  category: "expert_execution" | "expert_completed";
+  attempt: number;
+}) => void;
+
 export type PsychologyA2AFactory = (
   bindings: PsychologySpecialistBinding[],
 ) => PsychologyA2ARuntime;
@@ -81,7 +96,12 @@ type PsychologyA2AFactoryOptions = {
   principal: AuthenticatedA2APrincipal;
   taskStore: ScopedA2ATaskStore;
   requestLedger: A2ARequestLedger;
+  /** Returns any ledger-recorded durable task so live work can be polled. */
+  recoverTask?: PsychologyA2ADurableTaskRecovery;
+  /** Compatibility completed-only seam; it cannot recover live work. */
   recoverCompletedTask?: PsychologyA2ACompletedTaskRecovery;
+  transportIntercept?: PsychologyA2ATransportIntercept;
+  expertTelemetry?: PsychologyA2ATelemetry;
 };
 
 function endpointPath(approach: PsychologyApproach): string {
@@ -151,6 +171,27 @@ function requestMatchesTask(
     && request.data.configurationRevision === input.configurationRevision;
 }
 
+function runningTaskMatchesRequest(
+  task: Task,
+  input: Parameters<typeof requestMatchesTask>[1] & {
+    consultation: PsychologyConsultation;
+  },
+) {
+  if (!requestMatchesTask(task, input)) return false;
+  const requests = task.history.flatMap((message) =>
+    message.messageId === input.requestIdentity
+      ? message.parts.flatMap((part) =>
+          part.content?.$case === "data" ? [part.content.value] : [],
+        )
+      : [],
+  );
+  const request = psychologyA2ARequestSchema.safeParse(requests[0]);
+  return request.success
+    && request.data.consultation.request === input.consultation.request
+    && request.data.consultation.urgency === input.consultation.urgency
+    && request.data.consultation.knowledgeQuery === input.consultation.knowledgeQuery;
+}
+
 function recoverablePlanFromTask(
   task: Task | undefined,
   input: {
@@ -190,9 +231,8 @@ function withCancellation<T>(
 /**
  * Standard A2A client and Request/Response transport joined by an injected,
  * non-network bridge. The bearer and parent signals live only in this runtime.
- * After restart, the durable ledger replays a validated completed task. A
- * submitted/working task is returned as unavailable: unknown effects are not
- * automatically rerun and interrupted work is not claimed to have resumed.
+ * The durable ledger resolves a stable task identity before sending. Existing
+ * work is polled through the generic recovery helper and is never rerun.
  */
 export function createInProcessPsychologyA2AFactory(
   options: PsychologyA2AFactoryOptions,
@@ -275,6 +315,7 @@ export function createInProcessPsychologyA2AFactory(
           ));
           try {
             signal.throwIfAborted();
+            options.expertTelemetry?.({ category: "expert_execution", attempt: 1 });
             const plan = psychologyPlanSchema.parse(
               await binding.execute(parsed.data.consultation, signal),
             );
@@ -307,6 +348,7 @@ export function createInProcessPsychologyA2AFactory(
               input.contextId,
               TASK_STATE.COMPLETED,
             ));
+            options.expertTelemetry?.({ category: "expert_completed", attempt: 1 });
           } catch {
             sink.publish(terminalUpdate(
               input.taskId,
@@ -336,7 +378,7 @@ export function createInProcessPsychologyA2AFactory(
     const configuredUrls = new Set(
       registry.list().flatMap((agent) => [agent.cardUrl, agent.endpointUrl]),
     );
-    const bridgeFetch: typeof fetch = async (requestInput, init) => {
+    const directBridgeFetch: typeof fetch = async (requestInput, init) => {
       const request = requestInput instanceof Request
         ? new Request(requestInput, init)
         : new Request(requestInput, init);
@@ -345,6 +387,10 @@ export function createInProcessPsychologyA2AFactory(
       }
       return transport.handleRequest(request);
     };
+    const bridgeFetch: typeof fetch = options.transportIntercept
+      ? async (requestInput, init) =>
+        options.transportIntercept!(requestInput, init, directBridgeFetch)
+      : directBridgeFetch;
     const clients = new Map(bindings.map((binding) => [
       binding.approach,
       new A2APeerClient({
@@ -377,24 +423,63 @@ export function createInProcessPsychologyA2AFactory(
         const timer = setTimeout(() => deadline.abort(), AJ_A2A_DEADLINE_MS);
         timer.unref?.();
         const invocationSignal = AbortSignal.any([input.signal, deadline.signal]);
+        const request: SendMessageRequest = {
+          tenant: "",
+          message: {
+            messageId,
+            contextId: "",
+            taskId: "",
+            role: 1,
+            parts: [{
+              content: {
+                $case: "data",
+                value: {
+                  schemaVersion: 1,
+                  approach: input.approach,
+                  configurationRevision: binding.revision,
+                  consultation: input.consultation,
+                },
+              },
+              mediaType: "application/json",
+              filename: "",
+              metadata: { schemaVersion: 1 },
+            }],
+            metadata: {},
+            extensions: [],
+            referenceTaskIds: [],
+          },
+          configuration: {
+            acceptedOutputModes: [PLAN_MEDIA_TYPE],
+            taskPushNotificationConfig: undefined,
+            historyLength: 1,
+            returnImmediately: false,
+          },
+          metadata: {},
+        };
+        const durableRecovery = options.recoverTask ?? options.recoverCompletedTask;
+        const recoverTask = async (): Promise<Task | undefined> => {
+          if (!durableRecovery) return undefined;
+          return await durableRecovery({
+            scope: {
+              tenant: options.principal.tenant,
+              owner: options.principal.owner,
+              agentId: input.approach,
+            },
+            requestIdentity: messageId,
+          });
+        };
         try {
           if (input.signal.aborted) return { status: "canceled" };
-          let recoveredPlan: PsychologyPlan | undefined;
-          if (options.recoverCompletedTask) {
-            let task: Task | undefined;
-            try {
-              task = await withCancellation(
-                options.recoverCompletedTask({
-                  scope: {
-                    tenant: options.principal.tenant,
-                    owner: options.principal.owner,
-                    agentId: input.approach,
-                  },
-                  requestIdentity: messageId,
-                }),
-                invocationSignal,
-              );
-            } catch {
+          if (durableRecovery) {
+            let recoveryLookupFailed = false;
+            const task: Task | undefined = await withCancellation(
+              recoverTask(),
+              invocationSignal,
+            ).catch(() => {
+              recoveryLookupFailed = true;
+              return undefined;
+            });
+            if (recoveryLookupFailed) {
               // A failed or timed-out recovery lookup is authoritative only
               // as an unavailable state; it must not bypass the ledger with a
               // speculative send.
@@ -402,57 +487,50 @@ export function createInProcessPsychologyA2AFactory(
               return { status: "unavailable" };
             }
             if (invocationSignal.aborted) return { status: "canceled" };
-            recoveredPlan = recoverablePlanFromTask(task, {
+            const recoveredPlan = recoverablePlanFromTask(task, {
               requestIdentity: messageId,
               approach: input.approach,
               configurationRevision: binding.revision,
             });
+            if (recoveredPlan) return { status: "completed", plan: recoveredPlan };
+            const terminal = task?.status?.state !== undefined && (
+              task.status.state === TASK_STATE.COMPLETED
+              || task.status.state === TASK_STATE.FAILED
+              || task.status.state === TASK_STATE.CANCELED
+              || task.status.state === TASK_STATE.REJECTED
+            );
+            if (terminal) return { status: "unavailable" };
+            if (task && !runningTaskMatchesRequest(task, {
+              requestIdentity: messageId,
+              approach: input.approach,
+              configurationRevision: binding.revision,
+              consultation: input.consultation,
+            })) return { status: "unavailable" };
           }
-          if (recoveredPlan) {
-            if (invocationSignal.aborted) return { status: "canceled" };
-            return { status: "completed", plan: recoveredPlan };
-          }
-          if (invocationSignal.aborted) return { status: "canceled" };
           invocationSignals.set(messageId, invocationSignal);
-          const outcome = await client.sendMessage({
-            tenant: "",
-            message: {
-              messageId,
-              contextId: "",
-              taskId: "",
-              role: 1,
-              parts: [{
-                content: {
-                  $case: "data",
-                  value: {
-                    schemaVersion: 1,
-                    approach: input.approach,
-                    configurationRevision: binding.revision,
-                    consultation: input.consultation,
-                  },
-                },
-                mediaType: "application/json",
-                filename: "",
-                metadata: { schemaVersion: 1 },
-              }],
-              metadata: {},
-              extensions: [],
-              referenceTaskIds: [],
-            },
-            configuration: {
-              acceptedOutputModes: [PLAN_MEDIA_TYPE],
-              taskPushNotificationConfig: undefined,
-              historyLength: 1,
-              returnImmediately: false,
-            },
-            metadata: {},
-          }, { signal: invocationSignal });
+          const outcome = await recoverA2ASendMessage({
+            request,
+            send: (sentRequest, options) => client.sendMessage(sentRequest, options),
+            recoverTask,
+            maxAttempts: 3,
+            deadlineMs: AJ_A2A_DEADLINE_MS,
+            retryDelayMs: 20,
+            retryDelayMultiplier: 2,
+            maxRetryDelayMs: 200,
+            signal: invocationSignal,
+          });
           if (invocationSignal.aborted) return { status: "canceled" };
           if (outcome.status === "canceled") return { status: "canceled" };
-          if (outcome.status !== "ok" || "messageId" in outcome.value) {
+          if (outcome.status !== "ok") {
             return { status: "unavailable" };
           }
-          const plan = planFromTask(outcome.value, input.approach);
+          const matchesRequest = requestMatchesTask(outcome.task, {
+            requestIdentity: messageId,
+            approach: input.approach,
+            configurationRevision: binding.revision,
+          });
+          const plan = planFromTask(outcome.task, input.approach);
+          if (!matchesRequest) return { status: "unavailable" };
           return plan
             ? { status: "completed", plan }
             : { status: "unavailable" };

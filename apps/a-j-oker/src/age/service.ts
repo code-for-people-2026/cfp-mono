@@ -6,7 +6,7 @@ import type { AgeProfile } from "../payload-types";
 import { ageNotice, ageProvider, ageAssuranceAccepted, MANUAL_AGE_ASSURANCE, providerConfigured, wechatConfigured } from "./policy";
 import { withAgeLock } from "./lock";
 import { verifyAge, type AgeVerifier } from "./provider";
-import { bindAgeRestriction, latestAgeReviewCase, requestAgeReview, requireAgeRiskCase, requireApprovedReview, reviewProjection } from "./review";
+import { bindAgeRestriction, latestAgeReviewCase, requestAgeReview, requireAgeRiskCase, requireApprovedReview, reviewProjection, type AgeRiskEvidenceSource } from "./review";
 import { transaction } from "../operations/transaction";
 
 export async function ageProfile(payload: Payload, owner: string, req?: PayloadRequest) {
@@ -240,9 +240,9 @@ export class AgeService {
   }
   // Trusted internal integration seam for a future risk/guardian review service.
   // No client endpoint clears this flag, and no face verification is implemented.
-  async requireAdditionalVerification() {
+  async requireAdditionalVerification(evidence?: AgeRiskEvidenceSource) {
     return withAgeLock(this.payload, `owner:${this.owner.id}`, async () => {
-      await requireAgeRiskCase(this.payload, this.owner.id);
+      await requireAgeRiskCase(this.payload, this.owner.id, evidence);
       return this.status();
     });
   }

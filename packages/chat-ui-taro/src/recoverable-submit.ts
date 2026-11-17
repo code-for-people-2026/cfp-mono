@@ -4,6 +4,12 @@ export type RecoverableSubmissionStatus =
   | "failed"
   | "missing";
 
+export interface SubmissionFailureMetadata {
+  code?: string;
+  retryable?: boolean;
+  definitive?: boolean;
+}
+
 export interface RecoverableSubmission<
   TScope extends string | number,
   TRequest,
@@ -11,6 +17,16 @@ export interface RecoverableSubmission<
   scope: TScope;
   requestId: string;
   request: TRequest;
+}
+
+export interface RecoverableFailureRecord<
+  TScope extends string | number,
+  TRequest,
+> extends SubmissionFailureMetadata {
+  scope: TScope;
+  requestId: string;
+  fingerprint: string;
+  error?: unknown;
 }
 
 export interface RecoverableSubmitConfig<
@@ -25,6 +41,7 @@ export interface RecoverableSubmitConfig<
   >;
   classify(result: TResult | undefined): RecoverableSubmissionStatus;
   send(submission: RecoverableSubmission<TScope, TRequest>): Promise<TResult>;
+  failureMetadata?(error: unknown): SubmissionFailureMetadata;
 }
 
 export type RecoverableSubmitOutcome<TResult> =
@@ -36,14 +53,14 @@ export type RecoverableSubmitOutcome<TResult> =
       running: boolean;
     }
   | { type: "busy" }
-  | { type: "missing" }
+  | { type: "missing"; error?: unknown }
   | { type: "stale" };
 
 export type RecoverableCheckOutcome<TResult> =
   | { type: "completed"; result: TResult }
   | { type: "failed" }
   | { type: "running" }
-  | { type: "missing" }
+  | { type: "missing"; error?: unknown }
   | { type: "error"; error: unknown }
   | { type: "stale" };
 
@@ -62,12 +79,31 @@ interface Operation<TScope extends string | number> {
   scope: TScope;
 }
 
+function readFailureMetadata(
+  error: unknown,
+  read?: (error: unknown) => SubmissionFailureMetadata,
+): SubmissionFailureMetadata {
+  if (read) return read(error);
+  if (!(error instanceof Error)) return {};
+  const source = error as Error & Partial<SubmissionFailureMetadata>;
+  return {
+    ...(typeof source.code === "string" ? { code: source.code } : {}),
+    ...(typeof source.retryable === "boolean"
+      ? { retryable: source.retryable }
+      : {}),
+    ...(typeof source.definitive === "boolean"
+      ? { definitive: source.definitive }
+      : {}),
+  };
+}
+
 export function createRecoverableSubmitController<
   TScope extends string | number,
   TRequest,
   TResult,
 >(config: RecoverableSubmitConfig<TScope, TRequest, TResult>) {
   const pending = new Map<TScope, StoredSubmission<TScope, TRequest>>();
+  const failures = new Map<TScope, RecoverableFailureRecord<TScope, TRequest>>();
   let activeOperation: Operation<TScope> | undefined;
   let epoch = 0;
 
@@ -80,6 +116,7 @@ export function createRecoverableSubmitController<
     const result = await config.lookup(submission);
     return { status: config.classify(result), result };
   };
+
   const safeInspect = async (
     submission: RecoverableSubmission<TScope, TRequest>,
   ): Promise<Inspection<TResult>> => {
@@ -90,6 +127,7 @@ export function createRecoverableSubmitController<
       return { status: "missing" };
     }
   };
+
   const completed = (
     operation: Operation<TScope>,
     result: TResult,
@@ -97,8 +135,10 @@ export function createRecoverableSubmitController<
   ): RecoverableSubmitOutcome<TResult> => {
     if (!isCurrent(operation)) return { type: "stale" };
     pending.delete(operation.scope);
+    failures.delete(operation.scope);
     return { type: "completed", result, recovered };
   };
+
   const failed = (
     error: unknown,
     status: RecoverableSubmissionStatus,
@@ -108,6 +148,21 @@ export function createRecoverableSubmitController<
     confirmedFailed: status === "failed",
     running: status === "running",
   });
+
+  const rememberFailure = (
+    submission: StoredSubmission<TScope, TRequest>,
+    error: unknown,
+  ) => {
+    if (failures.has(submission.scope)) return;
+    failures.set(submission.scope, {
+      scope: submission.scope,
+      requestId: submission.requestId,
+      fingerprint: submission.fingerprint,
+      ...(error === undefined ? {} : { error }),
+      ...readFailureMetadata(error, config.failureMetadata),
+    });
+  };
+
   const recover = async (
     submission: StoredSubmission<TScope, TRequest>,
     error: unknown,
@@ -117,8 +172,8 @@ export function createRecoverableSubmitController<
     if (!isCurrent(operation)) return { type: "stale" };
     if (inspection.status === "completed" && inspection.result !== undefined)
       return completed(operation, inspection.result, true);
-    if (inspection.status === "failed")
-      pending.delete(submission.scope);
+    if (inspection.status === "failed") pending.delete(submission.scope);
+    rememberFailure(submission, error);
     return failed(error, inspection.status);
   };
 
@@ -135,9 +190,16 @@ export function createRecoverableSubmitController<
         request: current.request,
       };
     },
+    failureFor(
+      scope: TScope,
+    ): RecoverableFailureRecord<TScope, TRequest> | undefined {
+      const current = failures.get(scope);
+      return current ? { ...current } : undefined;
+    },
     reset() {
       epoch++;
       pending.clear();
+      failures.clear();
       // Detach unresolved operations from the new identity scope. Their late
       // results and lock releases cannot affect a newer operation.
       activeOperation = undefined;
@@ -151,8 +213,28 @@ export function createRecoverableSubmitController<
       activeOperation = operation;
       try {
         let submission = pending.get(scope);
-        if (submission && submission.fingerprint !== config.fingerprint(request))
+        const fingerprint = config.fingerprint(request);
+        if (submission && submission.fingerprint !== fingerprint) {
           submission = undefined;
+          failures.delete(scope);
+        }
+        if (!submission) {
+          // A producer-marked definitive pre-generation failure can safely keep
+          // its id: if that assertion was wrong, the server still deduplicates.
+          const failure = failures.get(scope);
+          if (
+            failure?.definitive &&
+            failure.fingerprint === fingerprint
+          ) {
+            submission = {
+              scope,
+              requestId: failure.requestId,
+              request,
+              fingerprint: failure.fingerprint,
+            };
+            pending.set(scope, submission);
+          }
+        }
         if (submission) {
           let inspection: Inspection<TResult>;
           try {
@@ -175,11 +257,13 @@ export function createRecoverableSubmitController<
           }
         }
 
+        const reuseSubmission = submission !== undefined;
+        if (!reuseSubmission) failures.delete(scope);
         submission = {
           scope,
           requestId: submission?.requestId || config.createRequestId(),
           request,
-          fingerprint: config.fingerprint(request),
+          fingerprint,
         };
         pending.set(scope, submission);
         try {
@@ -187,7 +271,10 @@ export function createRecoverableSubmitController<
           if (!isCurrent(operation)) return { type: "stale" };
           const status = config.classify(result);
           if (status === "completed") return completed(operation, result, false);
-          if (status === "failed") pending.delete(scope);
+          if (status === "failed") {
+            pending.delete(scope);
+            rememberFailure(submission, undefined);
+          }
           return failed(undefined, status);
         } catch (error) {
           if (!isCurrent(operation)) return { type: "stale" };
@@ -208,14 +295,25 @@ export function createRecoverableSubmitController<
         if (!isCurrent(operation)) return { type: "stale" };
         if (inspection.status === "completed" && inspection.result !== undefined) {
           pending.delete(scope);
+          failures.delete(scope);
           return { type: "completed", result: inspection.result };
         }
         if (inspection.status === "failed") {
           pending.delete(scope);
+          rememberFailure(submission, undefined);
           return { type: "failed" };
         }
         if (inspection.status === "running") return { type: "running" };
-        return { type: "missing" };
+        const failure = failures.get(scope);
+        return {
+          type: "missing",
+          ...(failure
+            && failure.requestId === submission.requestId
+            && failure.fingerprint === submission.fingerprint
+            && failure.error !== undefined
+            ? { error: failure.error }
+            : {}),
+        };
       } catch (error) {
         if (!isCurrent(operation)) return { type: "stale" };
         return { type: "error", error };

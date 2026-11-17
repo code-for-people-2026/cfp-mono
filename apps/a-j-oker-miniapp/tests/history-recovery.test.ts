@@ -745,6 +745,120 @@ describe("聊天历史与图片失败隔离", () => {
       ),
     ).toHaveLength(1);
   });
+  it("SERVICE_PROBLEM 确认缺失时保留原错误和草稿，重试复用请求 ID", async () => {
+    const originalRequest = platform.request.getMockImplementation()!;
+    const ids: string[] = [];
+    let statusChecks = 0;
+    const serviceProblemSse = [
+      { type: "RUN_STARTED" as const },
+      {
+        type: "RUN_ERROR" as const,
+        message: "服务暂时不可用，本次结果尚未确认；请先确认本轮状态，不要直接重复生成。",
+        code: "SERVICE_PROBLEM",
+        metadata: { retryable: true, definitive: false },
+      },
+    ];
+    platform.request.mockImplementation(
+      (options: { url: string; data?: AgentBody }) => {
+        if (options.url.includes("/requests/")) {
+          statusChecks += 1;
+          if (statusChecks === 1) return Promise.reject(new Error("状态查询也断网"));
+          return Promise.resolve({ statusCode: 200, data: { turn: null } });
+        }
+        if (options.url.endsWith("/ag-ui")) {
+          const args = options.data!;
+          ids.push(args.runId);
+          if (ids.length === 1) {
+            const events = serviceProblemSse.map((event, index) => ({
+              ...event,
+              ...(index === 0 ? { runId: args.runId } : {}),
+            }));
+            const response = {
+              statusCode: 200,
+              data: events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
+            };
+            let chunk:
+              | ((result: { data: ArrayBuffer }) => void)
+              | undefined;
+            let complete:
+              | ((value: { statusCode: number; data: string }) => void)
+              | undefined;
+            const task = Object.assign(
+              new Promise<{ statusCode: number; data: string }>((resolve) => {
+                complete = resolve;
+              }),
+              {
+                onChunkReceived: (callback: typeof chunk) => {
+                  chunk = callback;
+                },
+                offChunkReceived: () => {},
+                abort: () => {},
+              },
+            );
+            queueMicrotask(() => {
+              chunk?.({ data: new TextEncoder().encode(response.data).buffer });
+              complete?.(response);
+            });
+            return task;
+          }
+          history.push({
+            ...initial,
+            id: 2,
+            input: inputOf(args),
+            greeting: "确认原请求后保存的回复",
+          });
+          return { statusCode: 200, data: wire(args.runId) };
+        }
+        return originalRequest(options);
+      },
+    );
+    await mount();
+    act(() =>
+      renderer!.root
+        .findByType("textarea")
+        .props.onInput({ detail: { value: "服务故障后的原草稿" } }),
+    );
+    const send = () =>
+      renderer!.root
+        .findAllByType("button")
+        .find((button) => button.props.className.includes("send-button"))!;
+    const confirm = () =>
+      renderer!.root
+        .findAllByType("button")
+        .find((button) =>
+          button.props.className.includes("check-submission"),
+        )!;
+    await act(async () => {
+      await send().props.onClick();
+    });
+    expect(text()).toContain(
+      "服务暂时不可用，本次结果尚未确认；请先确认本轮状态，不要直接重复生成。",
+    );
+    expect(renderer!.root.findByType("textarea").props.value).toBe(
+      "服务故障后的原草稿",
+    );
+    await act(async () => {
+      await confirm().props.onClick();
+    });
+    expect(text()).toContain(
+      "服务暂时不可用，本次结果尚未确认；请先确认本轮状态，不要直接重复生成。",
+    );
+    expect(renderer!.root.findByType("textarea").props.value).toBe(
+      "服务故障后的原草稿",
+    );
+    await act(async () => {
+      await confirm().props.onClick();
+    });
+    expect(text()).toContain(
+      "服务暂时不可用，本次结果尚未确认；请先确认本轮状态，不要直接重复生成。",
+    );
+    await act(async () => {
+      await send().props.onClick();
+    });
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(1);
+    expect(text()).toContain("确认原请求后保存的回复");
+  });
   it("旧 BYOK 历史仍可查看，当前发送保持平台模式且不显示密钥框", async () => {
     history.push({ ...initial, id: 2, mode: "byok", greeting: "以前自带密钥生成的回复" });
     await mount();

@@ -54,6 +54,78 @@ let deviceToken = "";
 let identityPromise: Promise<void> | undefined;
 let activeDownloads = 0;
 const waitingDownloads: (() => void)[] = [];
+const nativeStreamByteLimit = 256_000;
+
+function createNativeUtf8Stream(onText: (text: string) => void) {
+  let needed = 0;
+  let codePoint = 0;
+  let minimumContinuation = 0x80;
+  let maximumContinuation = 0xbf;
+  let total = 0;
+
+  function decodeCodePoint() {
+    if (codePoint > 0xffff) {
+      const remainder = codePoint - 0x10000;
+      onText(
+        String.fromCharCode(
+          0xd800 + (remainder >> 10),
+          0xdc00 + (remainder & 0x3ff),
+        ),
+      );
+    } else {
+      onText(String.fromCharCode(codePoint));
+    }
+  }
+
+  return {
+    push(chunk: ArrayBuffer) {
+      const bytes = new Uint8Array(chunk);
+      total += bytes.length;
+      if (total > nativeStreamByteLimit)
+        throw new Error("回复数据过大");
+      for (const byte of bytes) {
+        if (needed === 0) {
+          if (byte < 0x80) {
+            onText(String.fromCharCode(byte));
+          } else if (byte >= 0xc2 && byte <= 0xdf) {
+            needed = 1;
+            codePoint = byte & 0x1f;
+            minimumContinuation = 0x80;
+            maximumContinuation = 0xbf;
+          } else if (byte >= 0xe0 && byte <= 0xef) {
+            needed = 2;
+            codePoint = byte & 0x0f;
+            if (byte === 0xe0) {
+              minimumContinuation = 0xa0;
+            } else if (byte === 0xed) {
+              maximumContinuation = 0x9f;
+            }
+          } else if (byte >= 0xf0 && byte <= 0xf4) {
+            needed = 3;
+            codePoint = byte & 0x07;
+            if (byte === 0xf0) minimumContinuation = 0x90;
+            if (byte === 0xf4) maximumContinuation = 0x8f;
+          } else {
+            throw new Error("回复编码格式不正确，请稍后重试");
+          }
+        } else if (byte < minimumContinuation || byte > maximumContinuation) {
+          throw new Error("回复编码格式不正确，请稍后重试");
+        } else {
+          codePoint = (codePoint << 6) | (byte & 0x3f);
+          minimumContinuation = 0x80;
+          maximumContinuation = 0xbf;
+          if (--needed === 0) {
+            decodeCodePoint();
+          }
+        }
+      }
+    },
+    finish() {
+      if (needed !== 0)
+        throw new Error("回复传输中断，请刷新记录后重试");
+    },
+  };
+}
 
 export const IDENTITY_EXPIRED_MESSAGE =
   "设备凭证无效或已过期。旧聊天记录不会删除，但新身份无法访问旧记录。请确认后重新开始。";
@@ -61,6 +133,29 @@ export class IdentityExpiredError extends Error {
   constructor() {
     super(IDENTITY_EXPIRED_MESSAGE);
   }
+}
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+    readonly retryable?: boolean,
+    readonly definitive?: boolean,
+  ) {
+    super(message);
+  }
+}
+
+function errorFromEnvelope(value: unknown, fallback: string) {
+  const failure = errorSchema.safeParse(value, { jitless: native });
+  return failure.success
+    ? new ApiError(
+        failure.data.error,
+        failure.data.code,
+        failure.data.retryable,
+        failure.data.definitive,
+      )
+    : new ApiError(fallback);
 }
 
 async function request<T>(
@@ -88,10 +183,7 @@ async function request<T>(
   });
   if (response.statusCode < 200 || response.statusCode >= 300) {
     if (response.statusCode === 401) throw new IdentityExpiredError();
-    const failure = errorSchema.safeParse(response.data, { jitless: native });
-    throw new Error(
-      failure.success ? failure.data.error : "暂时连接不上，请稍后重试",
-    );
+    throw errorFromEnvelope(response.data, "暂时连接不上，请稍后重试");
   }
   try {
     // 微信的 Function 构造器可能返回不可调用的对象，不能依赖 Zod 的动态编译探测。
@@ -281,16 +373,121 @@ export function resumeImage(turnId: number, id: string, apiKey?: string, onProgr
   requirePlatform("platform", apiKey);
   return consumeRun("image-resume", { turnId, requestId: id, ...(apiKey ? { apiKey } : {}) }, id, onProgress);
 }
+
+function consumeNativeRun(
+  path: "ag-ui" | "image-resume",
+  body: unknown,
+  reader: ReturnType<typeof createRunReader>,
+) {
+  return new Promise<void>((resolve, reject) => {
+    let chunkListener:
+      | ((result: { data: ArrayBuffer }) => void)
+      | undefined;
+    let settled = false;
+    let receivedChunk = false;
+    let requestTask: ReturnType<typeof Taro.request>;
+    const decoder = createNativeUtf8Stream((text) => reader.push(text));
+
+    const detach = () => {
+      if (chunkListener && typeof requestTask.offChunkReceived === "function")
+        requestTask.offChunkReceived(chunkListener);
+    };
+    const stop = () => {
+      detach();
+      if (typeof requestTask?.abort === "function") requestTask.abort();
+    };
+    const fail = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      stop();
+      reject(error);
+    };
+    const succeed = () => {
+      if (settled) return;
+      settled = true;
+      detach();
+      resolve();
+    };
+
+    try {
+      requestTask = Taro.request({
+        url: `${origin}/api/hello/${path}`,
+        method: "POST",
+        data: body,
+        dataType: "text",
+        timeout: 240_000,
+        enableChunked: true,
+        header: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+          ...(path === "image-resume"
+            ? { [AJ_PRESENTATION_CATALOG_HEADER]: AJ_CATALOG_ID }
+            : {}),
+          ...(deviceToken ? { Authorization: `Bearer ${deviceToken}` } : {}),
+        },
+      });
+      if (typeof requestTask.onChunkReceived === "function") {
+        chunkListener = ({ data }) => {
+          if (settled) return;
+          if (data.byteLength > 0) receivedChunk = true;
+          try {
+            decoder.push(data);
+          } catch (error) {
+            fail(error);
+          }
+        };
+        requestTask.onChunkReceived(chunkListener);
+      }
+    } catch (error) {
+      fail(error);
+      return;
+    }
+
+    void (async () => {
+      try {
+        const response = await requestTask;
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          if (response.statusCode === 401) {
+            fail(new IdentityExpiredError());
+            return;
+          }
+          fail(errorFromEnvelope(response.data, "暂时连接不上，请稍后重试"));
+          return;
+        }
+        if (!receivedChunk) {
+          try {
+            reader.push(textResponseSchema.parse(response.data, { jitless: native }));
+          } catch {
+            fail(new Error("服务返回的数据格式不符合约定，请稍后重试"));
+            return;
+          }
+        }
+        try {
+          decoder.finish();
+        } catch (error) {
+          fail(error);
+          return;
+        }
+        try {
+          reader.finish();
+        } catch (error) {
+          fail(error);
+          return;
+        }
+        succeed();
+      } catch (error) {
+        fail(error);
+      }
+    })();
+  });
+}
 async function consumeRun(path: "ag-ui" | "image-resume", body: unknown, id: string, onProgress?: (progress: RunProgress) => void) {
   const reader = createRunReader(id, onProgress, {
     catalogIds: [AJ_CATALOG_ID],
     initialStep: "阿 J 先生正在想一想…",
   });
   if (native) {
-    // Native Taro buffers SSE; it consumes exactly the same AG-UI/A2UI events as H5.
-    reader.push(
-      await request(path, textResponseSchema, "POST", body, "text"),
-    );
+    await consumeNativeRun(path, body, reader);
   } else {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 240_000);
@@ -310,9 +507,9 @@ async function consumeRun(path: "ag-ui" | "image-resume", body: unknown, id: str
       });
       if (!response.ok) {
         if (response.status === 401) throw new IdentityExpiredError();
-        const failure = errorSchema.safeParse(await response.json());
-        throw new Error(
-          failure.success ? failure.data.error : "暂时连接不上，请稍后重试",
+        throw errorFromEnvelope(
+          await response.json(),
+          "暂时连接不上，请稍后重试",
         );
       }
       if (!response.body) throw new Error("回复没有内容");

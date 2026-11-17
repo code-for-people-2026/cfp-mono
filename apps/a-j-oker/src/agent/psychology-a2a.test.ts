@@ -154,6 +154,68 @@ describe("AJ 心理咨询标准 A2A 桥", () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
+  it("专家完成前的瞬时传输失败用同一请求身份重试且不重复执行", async () => {
+    const taskStore = new BridgeTaskStore();
+    const requestLedger = new BridgeLedger();
+    const execute = vi.fn(async () => result);
+    let messageSends = 0;
+    const runtime = createInProcessPsychologyA2AFactory({
+      principal: { owner: "alice", tenant: AJ_A2A_TENANT },
+      taskStore,
+      requestLedger,
+      recoverTask: bridgeCompletedTaskRecovery(taskStore, requestLedger),
+      transportIntercept: async (input, init, next) => {
+        const probe = new Request(input, init);
+        if (probe.method === "POST") {
+          messageSends++;
+          if (messageSends === 1) throw new TypeError("synthetic transient transport failure");
+        }
+        return next(input, init);
+      },
+    })([{ approach: "cbt", label: "认知行为", revision: "r1", execute }]);
+
+    await expect(runtime.consult({
+      parentExecutionId: "transient-turn",
+      approach: "cbt",
+      consultation,
+      signal: new AbortController().signal,
+    })).resolves.toEqual({ status: "completed", plan: result });
+    expect(messageSends).toBe(2);
+    expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it("任务已持久提交但响应丢失时恢复完成任务，不重发也不重新执行", async () => {
+    const taskStore = new BridgeTaskStore();
+    const requestLedger = new BridgeLedger();
+    const execute = vi.fn(async () => result);
+    let messageSends = 0;
+    const runtime = createInProcessPsychologyA2AFactory({
+      principal: { owner: "alice", tenant: AJ_A2A_TENANT },
+      taskStore,
+      requestLedger,
+      recoverTask: bridgeCompletedTaskRecovery(taskStore, requestLedger),
+      transportIntercept: async (input, init, next) => {
+        const probe = new Request(input, init);
+        if (probe.method === "POST") {
+          messageSends++;
+          const response = await next(input, init);
+          if (messageSends === 1) throw new TypeError("synthetic response loss after commit");
+          return response;
+        }
+        return next(input, init);
+      },
+    })([{ approach: "cbt", label: "认知行为", revision: "r1", execute }]);
+
+    await expect(runtime.consult({
+      parentExecutionId: "lost-response-turn",
+      approach: "cbt",
+      consultation,
+      signal: new AbortController().signal,
+    })).resolves.toEqual({ status: "completed", plan: result });
+    expect(messageSends).toBe(1);
+    expect(execute).toHaveBeenCalledOnce();
+  });
+
   it("隔离 owner 范围，失败任务不能授权流派", async () => {
     const taskStore = new BridgeTaskStore();
     const requestLedger = new BridgeLedger();
@@ -234,7 +296,7 @@ describe("AJ 心理咨询标准 A2A 桥", () => {
       principal: { owner: "alice", tenant: AJ_A2A_TENANT },
       taskStore,
       requestLedger,
-      recoverCompletedTask: bridgeCompletedTaskRecovery(taskStore, requestLedger),
+      recoverTask: bridgeCompletedTaskRecovery(taskStore, requestLedger),
     })([{ approach: "cbt", label: "认知行为", revision: "r1", execute }]);
     const controller = new AbortController();
     const pending = create().consult({
@@ -255,6 +317,40 @@ describe("AJ 心理咨询标准 A2A 桥", () => {
 
     controller.abort();
     await expect(pending).resolves.toEqual({ status: "canceled" });
+  });
+
+  it("同一稳定身份的运行中任务完成后被恢复且不重复执行", async () => {
+    const taskStore = new BridgeTaskStore();
+    const requestLedger = new BridgeLedger();
+    const gate = deferred<void>();
+    const execute = vi.fn(async () => {
+      await gate.promise;
+      return result;
+    });
+    const create = () => createInProcessPsychologyA2AFactory({
+      principal: { owner: "alice", tenant: AJ_A2A_TENANT },
+      taskStore,
+      requestLedger,
+      recoverTask: bridgeCompletedTaskRecovery(taskStore, requestLedger),
+    })([{ approach: "cbt", label: "认知行为", revision: "r1", execute }]);
+
+    const first = create().consult({
+      parentExecutionId: "live-to-completed-turn",
+      approach: "cbt",
+      consultation,
+      signal: new AbortController().signal,
+    });
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledOnce());
+    const second = create().consult({
+      parentExecutionId: "live-to-completed-turn",
+      approach: "cbt",
+      consultation,
+      signal: new AbortController().signal,
+    });
+    gate.resolve();
+    expect(await first).toEqual({ status: "completed", plan: result });
+    expect(await second).toEqual({ status: "completed", plan: result });
+    expect(execute).toHaveBeenCalledOnce();
   });
 
   it("恢复查询未完成前取消时不交付迟到的完成任务", async () => {
@@ -304,7 +400,7 @@ describe("AJ 心理咨询标准 A2A 桥", () => {
       principal: { owner: "alice", tenant: AJ_A2A_TENANT },
       taskStore: new BridgeTaskStore(),
       requestLedger: new BridgeLedger(),
-      recoverCompletedTask: async () => {
+      recoverTask: async () => {
         throw new Error("ledger unavailable");
       },
     })([{ approach: "cbt", label: "认知行为", revision: "r1", execute }]);

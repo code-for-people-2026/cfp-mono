@@ -22,17 +22,32 @@ import { ChatComposer, type ImageSource } from "../../chat/composer";
 import { ChatDock } from "../../chat/dock";
 import { Artifacts, LiveArtifacts } from "../../chat/artifacts";
 import { EvidenceCard } from "../../chat/evidence-card";
+import { DancingLoader } from "../../chat/dancing-loader";
+import { resolveExpertAvatarSource } from "../../chat/expert-avatars";
+import { LoadingCarousel } from "../../chat/loading-carousel";
+import {
+  formSubmissionStates,
+  isFormOnlyInput,
+} from "../../chat/form-history";
+import {
+  HandoffPreamble,
+  interimHandoffPreamble,
+} from "../../chat/handoff-preamble";
 import {
   activeSpecialistTurn,
   specialistFormStateForTurn,
   specialistPresentationForTurn,
 } from "../../chat/specialist-card";
+import {
+  clearSubmissionFailure,
+  readSubmissionFailure,
+  rememberSubmissionFailure,
+} from "../../chat/submission-failures";
 import { PresentationFrame } from "@cfp/chat-ui-taro/artifacts";
 import { CopyMessage, MessageText } from "../../chat/message-text";
 import { ChatIcon } from "../../chat/icon";
 import {
   type ClientEvent,
-  type FormValues,
   type RunProgress,
 } from "@cfp/base-chat-protocol";
 import {
@@ -114,6 +129,7 @@ export default function Chat() {
   const settingsNavigation = useRef(false);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<RunProgress>();
+  const [loadingRun, setLoadingRun] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -210,6 +226,9 @@ export default function Chat() {
       value instanceof Error ? value.message : "暂时没有完成，请稍后重试",
     );
   }
+  function failureMessage(value: unknown, fallback: string) {
+    return value instanceof Error ? value.message : fallback;
+  }
   function recoveryFailed(value: unknown) {
     if (value instanceof api.IdentityExpiredError) setIdentityExpired(true);
     return undefined;
@@ -271,9 +290,15 @@ export default function Chat() {
     setPending(undefined);
     setMemoryOpen(false);
     setNavigationOpen(false);
+    const previousFailure = submissions.current?.failureFor(id);
+    const recalledFailure = readSubmissionFailure(id);
     setError(
-      pendingSubmission
-        ? "这段对话还有一次发送等待确认，可以先确认上次发送。"
+      previousFailure?.error instanceof Error
+        ? previousFailure.error.message
+        : pendingSubmission
+          ? "这段对话还有一次发送等待确认，可以先确认上次发送。"
+        : recalledFailure
+          ? recalledFailure.message
         : "",
     );
     setHistoryFailed(false);
@@ -380,6 +405,13 @@ export default function Chat() {
           )[0];
         rememberSelection(selected.id);
         await readHistory(selected.id);
+        const recalledFailure = readSubmissionFailure(selected.id);
+        if (
+          version === bootVersion.current &&
+          recalledFailure &&
+          !submissions.current?.pendingFor(selected.id)
+        )
+          setError(recalledFailure.message);
       }
       if (version === bootVersion.current) setHistoryFailed(false);
     } catch (value) {
@@ -450,7 +482,9 @@ export default function Chat() {
     if (!current || disabled || sendLock.current) return;
     sendLock.current = true;
     setBusy(true);
+    setLoadingRun((current) => current + 1);
     const version = scopeVersion.current;
+    const previousFailure = submissions.current?.failureFor(current.scope);
     try {
       const outcome = await submissions.current!.check(current.scope);
       if (
@@ -479,6 +513,7 @@ export default function Chat() {
         setError("已确认上次回复保存成功，无需再次发送。");
         await readHistory(current.scope);
         await refreshSessions(version);
+        clearSubmissionFailure(current.scope);
       } else if (outcome.type === "failed") {
         setError("上次生成已确认失败，草稿保留；可以重新发送。");
       } else if (outcome.type === "running") {
@@ -486,9 +521,16 @@ export default function Chat() {
           "上次提交仍在处理，请稍后再确认；不会重复生成。",
         );
       } else if (outcome.type === "missing") {
-        setError("尚未找到上次提交，可用原请求重试发送。");
+        setError(
+          failureMessage(
+            outcome.error,
+            "尚未找到上次提交，可用原请求重试发送。",
+          ),
+        );
       } else if (outcome.type === "error") {
-        problem(outcome.error);
+        if (previousFailure?.error instanceof Error)
+          setError(previousFailure.error.message);
+        else problem(outcome.error);
       }
     } catch (value) {
       problem(value);
@@ -588,14 +630,10 @@ export default function Chat() {
       mediaIds: draft.images.map((item) => item.id),
     };
     setBusy(true);
-    setPending(
-      formInput
-        ? {
-            text: formInput.action ? "回到阿 J" : formInput.text,
-            images: [],
-          }
-        : draft,
-    );
+    // A form submission is represented by its original expert card. Showing a
+    // transient user bubble would repeat the server-generated summary before
+    // acceptance is known.
+    setPending(formInput ? undefined : draft);
     setProgress(undefined);
     if (!formInput) {
       setText("");
@@ -645,10 +683,20 @@ export default function Chat() {
           result,
         ]);
         await readHistory(id);
+        clearSubmissionFailure(id);
       } else if (outcome.type === "failed") {
         if (outcome.running)
           setError("上次提交仍在处理，请稍后再确认；不会重复生成。");
-        else problem(outcome.error);
+        else {
+          problem(outcome.error);
+          const failedSubmission = submissions.current?.pendingFor(id);
+          if (failedSubmission && outcome.error !== undefined)
+            rememberSubmissionFailure(
+              id,
+              failedSubmission.requestId,
+              outcome.error,
+            );
+        }
         if (formInput)
           formFailure =
             outcome.running
@@ -719,18 +767,10 @@ export default function Chat() {
     // Confirmed saves (including recovered responses) never become retry errors.
     if (formFailure) throw formFailure;
   }
-  const formResponses = Object.fromEntries(
-    history
-      .filter((row) => row.status === "completed" && row.input.formResponse)
-      .map((row) => {
-        const response = row.input.formResponse!;
-        return [
-          `turn_${response.turnId}_${response.artifactId}`,
-          response.values,
-        ];
-      }),
-  ) as Record<string, FormValues>;
+  const { responses: formResponses, draftResponses } =
+    formSubmissionStates(history);
   const activeSpecialist = activeSpecialistTurn(history);
+  const interimPreamble = interimHandoffPreamble(history, progress);
   const returnToAj = async (taskId: string) => {
     try {
       await send({
@@ -750,6 +790,7 @@ export default function Chat() {
     const version = scopeVersion.current;
     const scope = sessionId;
     setBusy(true); setError("");
+    setLoadingRun((current) => current + 1);
     setProgress({ text: "", messages: [], step: "正在继续取图…" });
     try {
       await api.resumeImage(row.id, requestId(), undefined, (next) => {
@@ -889,51 +930,53 @@ export default function Chat() {
             )}
             {history.map((row, rowIndex) => (
               <View className="turn" key={row.id}>
-                <View className="message user-message">
-                  <View className="user-message-main">
-                    <View className="bubble user-bubble">
-                      {(row.input.text || row.input.action) && (
-                        <MessageText>{row.input.action ? "回到阿 J" : row.input.text}</MessageText>
-                      )}
-                      {row.input.mediaIds.length > 0 && (
-                        <View className="bubble-images">
-                          {row.input.mediaIds.map((id) =>
-                            images[id] ? (
-                              <Image
-                                key={id}
-                                className="message-image"
-                                src={images[id]!}
-                                mode="aspectFill"
-                                onError={() =>
-                                  setImages((current) => ({
-                                    ...current,
-                                    [id]: null,
-                                  }))
-                                }
-                                onClick={() =>
-                                  Taro.previewImage({
-                                    urls: row.input.mediaIds
-                                      .map((value) => images[value])
-                                      .filter(
-                                        (source): source is string => !!source,
-                                      ),
-                                    current: images[id]!,
-                                  })
-                                }
-                              />
-                            ) : (
-                              <Text key={id} className="image-placeholder">
-                                {images[id] === null
-                                  ? "图片暂不可用"
-                                  : "图片加载中…"}
-                              </Text>
-                            ),
-                          )}
-                        </View>
-                      )}
+                {!isFormOnlyInput(row.input) && (
+                  <View className="message user-message">
+                    <View className="user-message-main">
+                      <View className="bubble user-bubble">
+                        {(row.input.text || row.input.action) && (
+                          <MessageText>{row.input.action ? "回到阿 J" : row.input.text}</MessageText>
+                        )}
+                        {row.input.mediaIds.length > 0 && (
+                          <View className="bubble-images">
+                            {row.input.mediaIds.map((id) =>
+                              images[id] ? (
+                                <Image
+                                  key={id}
+                                  className="message-image"
+                                  src={images[id]!}
+                                  mode="aspectFill"
+                                  onError={() =>
+                                    setImages((current) => ({
+                                      ...current,
+                                      [id]: null,
+                                    }))
+                                  }
+                                  onClick={() =>
+                                    Taro.previewImage({
+                                      urls: row.input.mediaIds
+                                        .map((value) => images[value])
+                                        .filter(
+                                          (source): source is string => !!source,
+                                        ),
+                                      current: images[id]!,
+                                    })
+                                  }
+                                />
+                              ) : (
+                                <Text key={id} className="image-placeholder">
+                                  {images[id] === null
+                                    ? "图片暂不可用"
+                                    : "图片加载中…"}
+                                </Text>
+                              ),
+                            )}
+                          </View>
+                        )}
+                      </View>
                     </View>
                   </View>
-                </View>
+                )}
                 <View className="message assistant-message">
                   <View className="message-main">
                     <View
@@ -966,6 +1009,7 @@ export default function Chat() {
                                 origin={origin}
                                 showOrigin={false}
                                 responses={formResponses}
+                                draftResponses={draftResponses}
                                 disabled={
                                   !formReady ||
                                   (specialistFormState !== undefined &&
@@ -975,26 +1019,54 @@ export default function Chat() {
                                 onAction={submitForm}
                               />
                             )}
-                            {row.status === "completed" && row.association && (
-                              <EvidenceCard turn={row} />
-                            )}
+                            {row.status === "completed" &&
+                              (row.association || origin) && (
+                                <EvidenceCard turn={row} origin={origin} />
+                              )}
                           </>
                         );
-                        if (!origin) return turnContent;
+                        const canReturn = activeSpecialist?.id === row.id;
+                        if (!origin) {
+                          return row.handoffPreamble
+                            ? (
+                              <>
+                                <HandoffPreamble text={row.handoffPreamble} />
+                                {turnContent}
+                              </>
+                            )
+                            : turnContent;
+                        }
                         const firstHandoff = !history
                           .slice(0, rowIndex)
                           .some((previous) => specialistPresentationForTurn(previous)?.id === origin.id);
-                        const canReturn = activeSpecialist?.id === row.id;
                         return (
-                          <PresentationFrame
-                            origin={origin}
-                            notice={firstHandoff ? "阿 J 已把这段对话交给这位 AI 专家，以下是 AI 专家的直接回复" : undefined}
-                            exitLabel={canReturn ? "回到阿 J" : undefined}
-                            exitDisabled={!formReady || busy}
-                            onExit={canReturn ? () => void returnToAj(origin.id) : undefined}
-                          >
-                            {turnContent}
-                          </PresentationFrame>
+                          <>
+                            {row.handoffPreamble && (
+                              <HandoffPreamble text={row.handoffPreamble} />
+                            )}
+                            {firstHandoff && (
+                              <Text className="specialist-handoff-notice">
+                                阿 J 已把这段对话交给这位 AI 专家，以下是 AI
+                                专家的直接回复
+                              </Text>
+                            )}
+                            <PresentationFrame
+                              origin={origin}
+                              avatarSource={resolveExpertAvatarSource(
+                                origin.avatar?.reference,
+                              )}
+                              exitLabel={canReturn ? "回到阿 J" : undefined}
+                              exitDisabled={!formReady || busy}
+                              onExit={
+                                canReturn
+                                  ? () => void returnToAj(origin.id)
+                                  : undefined
+                              }
+                              showSources={false}
+                            >
+                              {turnContent}
+                            </PresentationFrame>
+                          </>
                         );
                       })()}
                     </View>
@@ -1047,12 +1119,14 @@ export default function Chat() {
                 <View className="message assistant-message">
                   <View className="message-main">
                     <View className="bubble assistant-bubble thinking">
-                      <Text className="thinking-dots">● ● ●</Text>
-                      <MessageText>
-                        {progress?.text ||
-                          progress?.step ||
-                          "阿 J 先生正在换个角度想…"}
-                      </MessageText>
+                      {busy && interimPreamble && (
+                        <HandoffPreamble text={interimPreamble.text} />
+                      )}
+                      <DancingLoader />
+                      <LoadingCarousel
+                        progress={progress}
+                        resetKey={loadingRun}
+                      />
                       {progress && (
                         <LiveArtifacts messages={progress.messages} />
                       )}
@@ -1061,7 +1135,18 @@ export default function Chat() {
                 </View>
               </View>
             )}
-            {busy && !pending && progress && <Text className="artifact-caption">{progress.step}</Text>}
+            {busy && !pending && progress && (
+              <View className="message assistant-message">
+                <View className="message-main">
+                  <View className="bubble assistant-bubble thinking">
+                    {interimPreamble && (
+                      <HandoffPreamble text={interimPreamble.text} />
+                    )}
+                    <LoadingCarousel progress={progress} resetKey={loadingRun} />
+                  </View>
+                </View>
+              </View>
+            )}
             <View id="chat-end" className="chat-end" />
           </View>
         </View>
@@ -1141,9 +1226,13 @@ export default function Chat() {
                 onSend={() => send()}
               />
             {!loading && !age?.allowed && <Button className="age-resume" onClick={() => setAgeOpen(true)}>{age?.configuration.previewOnly ? "继续体验" : "继续登录与年龄确认"}</Button>}
-            <Text className="composer-footnote">
-              {age?.configuration.previewOnly ? "本次预览体验登录与年龄确认，暂不开放聊天" : !loading && !consentCurrent(privacy) ? "使用前请在设置 → 隐私与数据中确认授权" : "阿 J 先生是 AI，好意不是对未来的保证"}
-            </Text>
+            {(age?.configuration.previewOnly || (!loading && !consentCurrent(privacy))) && (
+              <Text className="composer-footnote">
+                {age?.configuration.previewOnly
+                  ? "本次预览体验登录与年龄确认，暂不开放聊天"
+                  : "使用前请在设置 → 隐私与数据中确认授权"}
+              </Text>
+            )}
           </View>
         </ChatDock>
         {memoryOpen && (

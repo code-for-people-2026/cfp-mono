@@ -1,5 +1,5 @@
 import { useMemo, useState, type ComponentType, type ReactNode } from "react";
-import { Button, Text, View } from "./taro-components";
+import { Button, Image, Text, View } from "./taro-components";
 import {
   legacyArtifactsSchema,
   presentationOriginSchema,
@@ -26,56 +26,93 @@ import type { SurfaceModel } from "@a2ui/web_core/v0_9";
 
 export function PresentationOriginHeader({
   origin,
+  avatarSource,
   notice,
   exitLabel,
   exitDisabled,
   onExit,
+  showSources = true,
 }: {
   origin: PresentationOrigin;
+  avatarSource?: string;
   notice?: string;
   exitLabel?: string;
   exitDisabled?: boolean;
   onExit?: () => void;
+  showSources?: boolean;
 }) {
-  const state = {
-    continuing: "正在继续",
-    completed: "本次任务已完成",
-    unavailable: "当前不可用",
-  }[origin.state];
+  const [failedAvatarSource, setFailedAvatarSource] = useState<string>();
+  // A continuing task needs no persistent status label; terminal states stay
+  // meaningful for readers deciding whether a form or card is still usable.
+  const state = origin.state === "continuing"
+    ? undefined
+    : {
+        completed: "本次任务已完成",
+        unavailable: "当前不可用",
+      }[origin.state];
+  const roleLine = origin.subtitle ?? `方法：${origin.role}`;
+  const avatarInitial = origin.name.trim().charAt(0);
+  const resolvedAvatarSource =
+    avatarSource && avatarSource !== failedAvatarSource ? avatarSource : undefined;
   return (
     <View className="presentation-origin-header-block">
       {notice && <Text className="presentation-origin-notice">{notice}</Text>}
       <View className="presentation-origin-header">
-        <View>
-          <Text className="presentation-origin-name">AI 专家：{origin.name}</Text>
-          <Text className="presentation-origin-role">方法：{origin.role} · {state}</Text>
+        <View className="presentation-origin-identity">
+          {resolvedAvatarSource ? (
+            <Image
+              className="presentation-origin-avatar"
+              src={resolvedAvatarSource}
+              mode="aspectFill"
+              ariaLabel={`${origin.name}的头像`}
+              onError={() => setFailedAvatarSource(resolvedAvatarSource)}
+            />
+          ) : (
+            <Text
+              className="presentation-origin-avatar presentation-origin-avatar-fallback"
+            >
+              {avatarInitial}
+            </Text>
+          )}
+          <View className="presentation-origin-copy">
+            <Text className="presentation-origin-name">AI 专家：{origin.name}</Text>
+            <Text className="presentation-origin-role">
+              {state ? `${roleLine} · ${state}` : roleLine}
+            </Text>
+          </View>
         </View>
         {onExit && exitLabel && <Button className="control presentation-origin-exit" disabled={exitDisabled || undefined} onClick={onExit}>{exitLabel}</Button>}
       </View>
-      <Text className="presentation-origin-sources">
-        {origin.sources.length
-          ? `实际参考：${origin.sources.map((source) => `${source.library} / ${source.title}（${source.readStatus === "document" ? "已读正文" : "已读片段"}）`).join("；")}`
-          : "本轮未使用可核对的知识库正文"}
-      </Text>
+      {showSources && (
+        <Text className="presentation-origin-sources">
+          {origin.sources.length
+            ? `实际参考：${origin.sources.map((source) => `${source.library} / ${source.title}（${source.readStatus === "document" ? "已读正文" : "已读片段"}）`).join("；")}`
+            : "本轮未使用可核对的知识库正文"}
+        </Text>
+      )}
     </View>
   );
 }
 
 export function PresentationFrame({
   origin,
+  avatarSource,
   notice,
   exitLabel,
   exitDisabled,
   onExit,
   showHeader = true,
+  showSources = true,
   children,
 }: {
   origin: PresentationOrigin;
+  avatarSource?: string;
   notice?: string;
   exitLabel?: string;
   exitDisabled?: boolean;
   onExit?: () => void;
   showHeader?: boolean;
+  showSources?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -83,10 +120,12 @@ export function PresentationFrame({
       {showHeader && (
         <PresentationOriginHeader
           origin={origin}
+          avatarSource={avatarSource}
           notice={notice}
           exitLabel={exitLabel}
           exitDisabled={exitDisabled}
           onExit={onExit}
+          showSources={showSources}
         />
       )}
       <View className="presentation-content">{children}</View>
@@ -107,6 +146,7 @@ export interface ArtifactRendererAdapter<Identity extends string | number> {
 type SurfaceProps = ArtifactProps & {
   messages: A2uiMessage[];
   responses: Record<string, FormValues>;
+  draftResponses?: Record<string, FormValues>;
   compact?: boolean;
   origin?: PresentationOrigin;
   originNotice?: string;
@@ -134,6 +174,7 @@ export function ArtifactSurfaces({
   adapter,
   messages,
   responses,
+  draftResponses = {},
   compact = true,
   origin,
   originNotice,
@@ -176,7 +217,8 @@ export function ArtifactSurfaces({
             {...props}
             disabledStatus={inlineForm ? props.disabledStatus : undefined}
             submitted={confirmedValues !== undefined}
-            initialValues={confirmedValues}
+            confirmedValues={confirmedValues}
+            initialDraftValues={draftResponses[surface.id]}
           >
             {inlineForm && confirmedValues !== undefined ? (
               <ArtifactDetails external={props.external}>
@@ -273,6 +315,7 @@ export function Artifacts<Identity extends string | number>({
   artifacts: unknown;
   origin?: PresentationOrigin;
   responses: Record<string, FormValues>;
+  draftResponses?: Record<string, FormValues>;
   compact?: boolean;
 }) {
   return (
@@ -303,6 +346,7 @@ function LegacyArtifactsContent<Identity extends string | number>({
   artifacts: unknown;
   origin?: PresentationOrigin;
   responses: Record<string, FormValues>;
+  draftResponses?: Record<string, FormValues>;
   compact?: boolean;
 }) {
   const { Text, labels } = useArtifactUi();

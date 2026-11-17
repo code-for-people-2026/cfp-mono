@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { BaseLlm, type LlmRequest, type LlmResponse } from "@google/adk";
-import { syntheticTextReview } from "./synthetic-text-review";
-import type { Generator } from "../src/agent/runtime";
+import { ordinaryInteraction, syntheticTextReview } from "./synthetic-text-review";
+import type { GenerationRequest, Generator } from "../src/agent/runtime";
 import type { Moderator } from "../src/domain/moderation";
 import type { SpecialistState } from "../src/agent/specialist-state";
 
@@ -69,6 +69,18 @@ const repo = new Repository(payload, owner);
 await consentForFixture(repo);
 const model = new ExpertModel();
 const makeService = () => new GreetingService(repo, request => runGreeting(request, model), undefined, undefined, { moderate: syntheticTextReview });
+const staleFormCreationReview: Moderator = async request => {
+  const review = await syntheticTextReview(request);
+  if (request.stage !== "input" || request.purpose === "image_generation") return review;
+  return {
+    ...review,
+    interaction: {
+      ...ordinaryInteraction,
+      single_choice_only: true,
+      single_open_question_only: true,
+    },
+  };
+};
 const session = await makeService().createSession("专家生命周期");
 const first = await makeService().generateGreeting({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "我总觉得自己做错了", mediaIds: [] } });
 assert.equal(first.status, "completed");
@@ -84,7 +96,19 @@ const otherSession = await makeService().createSession("另一个会话");
 await assert.rejects(() => makeService().generateGreeting({ sessionId: otherSession.id, requestId: randomUUID(), mode: "platform", input: { text: "", mediaIds: [], formResponse: { turnId: first.id, artifactId: form.id, values: { fact: "跨会话" } } } }), /不属于当前对话/);
 
 const formRequestId = randomUUID();
-const formResult = await makeService().generateGreeting({ sessionId: session.id, requestId: formRequestId, mode: "platform", input: { text: "", mediaIds: [], formResponse: { turnId: first.id, artifactId: form.id, values: { fact: "会议上说错了一句话" } } } });
+const submittedGenerationRequests: GenerationRequest[] = [];
+const formService = new GreetingService(repo, request => {
+  submittedGenerationRequests.push(request);
+  return runGreeting(request, model);
+}, undefined, undefined, { moderate: staleFormCreationReview });
+const formResult = await formService.generateGreeting({ sessionId: session.id, requestId: formRequestId, mode: "platform", input: { text: "", mediaIds: [], formResponse: { turnId: first.id, artifactId: form.id, values: { fact: "会议上说错了一句话" } } } });
+assert.equal(formResult.status, "completed");
+assert.deepEqual(formResult.artifacts, [], "a validated form submission can be acknowledged without a replacement form");
+assert.equal(submittedGenerationRequests.length, 1);
+assert.equal(submittedGenerationRequests[0].singleChoiceOnly, false);
+assert.equal(submittedGenerationRequests[0].singleOpenQuestionOnly, false);
+assert.match(String(formResult.input.text), /填写「记录事实」/);
+assert.match(String(formResult.input.text), /会议上说错了一句话/);
 assert.equal((await makeService().generateGreeting({ sessionId: session.id, requestId: formRequestId, mode: "platform", input: { text: "", mediaIds: [], formResponse: { turnId: first.id, artifactId: form.id, values: { fact: "会议上说错了一句话" } } } })).id, formResult.id, "original answered-form request must replay");
 await assert.rejects(() => makeService().generateGreeting({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "", mediaIds: [], formResponse: { turnId: first.id, artifactId: form.id, values: { fact: "重复提交" } } } }), /已经提交/);
 await makeService().generateGreeting({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "然后我一直在反复想", mediaIds: [] } });
@@ -130,7 +154,7 @@ await payload.update({ collection: "agent-configs", id: cbtConfig.id, data: { en
 const unavailable = await makeService().generateGreeting({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "专家停用后继续", mediaIds: [] } });
 assert.equal(unavailable.specialist?.status, "unavailable");
 assert.deepEqual(unavailable.specialist?.sources, []);
-assert.match(unavailable.greeting!, /目前不可用/);
+assert.match(unavailable.greeting!, /该专家配置当前已停用/);
 await payload.update({ collection: "agent-configs", id: cbtConfig.id, data: { enabled: true }, overrideAccess: true });
 
 const ordinary = { minor: false, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: false, single_choice_only: false };

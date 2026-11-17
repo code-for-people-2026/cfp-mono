@@ -408,11 +408,11 @@ export class PayloadA2ARequestLedger implements A2ARequestLedger {
   }
 
   /**
-   * Host-owned completed-result recovery join. The ledger owns the stable
-   * request identity and the task collection owns the durable snapshot; this
-   * method does not relax same-ID/different-fingerprint request rejection.
+   * Host-owned durable-task recovery join. The ledger owns the stable request
+   * identity and the task collection owns the durable snapshot; this method
+   * does not relax same-ID/different-fingerprint request rejection.
    */
-  async recoverCompletedTask(
+  async recoverTask(
     input: A2ACompletedTaskRecoveryInput,
   ): Promise<Task | undefined> {
     const row = await this.find(input.scope, scopeKey(
@@ -437,9 +437,15 @@ export class PayloadA2ARequestLedger implements A2ARequestLedger {
     if (!task || task.id !== row.taskId || task.contextId !== row.contextId) {
       return undefined;
     }
-    return task.status?.state === TASK_STATE.COMPLETED
-      ? structuredClone(task)
-      : undefined;
+    return structuredClone(task);
+  }
+
+  /** Compatibility seam for callers that intentionally replay completed work only. */
+  async recoverCompletedTask(
+    input: A2ACompletedTaskRecoveryInput,
+  ): Promise<Task | undefined> {
+    const task = await this.recoverTask(input);
+    return task?.status?.state === TASK_STATE.COMPLETED ? task : undefined;
   }
 
   private async find(scope: Scope, key: string) {
@@ -476,5 +482,7 @@ export function createPayloadA2AStorage(repo: Repository, tenant: string) {
     requestLedger,
     recoverCompletedTask: (input: A2ACompletedTaskRecoveryInput) =>
       requestLedger.recoverCompletedTask(input),
+    recoverTask: (input: A2ACompletedTaskRecoveryInput) =>
+      requestLedger.recoverTask(input),
   };
 }

@@ -21,6 +21,8 @@ export type SpecialistDefinition = {
   revision: string;
   theme?: "sage" | "blue" | "plum" | "amber";
   preferredLayout?: "reflection" | "step_by_step" | "action_plan";
+  subtitle?: string;
+  avatarReference?: string;
   allowedComponents?: ArtifactComponent[];
   preferredComponents?: ArtifactComponent[];
   knowledge?: (query: string, signal: AbortSignal) => Promise<KnowledgeContext>;
@@ -46,10 +48,13 @@ export function imaConnection(
 
 export function resolveExpertPresentation(
   key: PsychologyApproach,
-  stored: Partial<ExpertPresentation>,
+  stored: Partial<Omit<ExpertPresentation, "subtitle">> & {
+    subtitle?: string | null;
+  },
 ): ExpertPresentation {
   const defaults = defaultAgentConfig(key);
-  if (!defaults) throw new Error(`未知心理专家配置：${key}`);
+  if (!defaults || !("avatarReference" in defaults))
+    throw new Error(`未知心理专家配置：${key}`);
   // Payload reads a hasMany field with no child rows as [], so old databases
   // need the nullable scalar fields as the pre-feature sentinel. Once either
   // scalar is stored, [] is an administrator's intentional "no artifacts".
@@ -60,6 +65,10 @@ export function resolveExpertPresentation(
   return {
     theme: stored.theme ?? defaults.theme,
     preferredLayout: stored.preferredLayout ?? defaults.preferredLayout,
+    // Missing, null and blank values all use the AJ built-in copy. A configured
+    // nonblank value wins without replacing the stored expert snapshot.
+    subtitle: stored.subtitle?.trim() || defaults.subtitle,
+    avatarReference: stored.avatarReference ?? defaults.avatarReference,
     allowedComponents,
     preferredComponents: (preFeature
       ? defaults.preferredComponents
@@ -116,6 +125,7 @@ export async function loadAgentConfiguration(
         {
           theme: doc.theme ?? undefined,
           preferredLayout: doc.preferredLayout ?? undefined,
+          subtitle: doc.subtitle ?? undefined,
           allowedComponents: doc.allowedComponents ?? undefined,
           preferredComponents: doc.preferredComponents ?? undefined,
         },

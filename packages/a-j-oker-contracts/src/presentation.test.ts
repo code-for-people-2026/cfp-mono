@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import * as base from "@cfp/base-chat-protocol";
 import {
+  AJ_BUILT_IN_EXPERT_SUBTITLES,
   AJ_CATALOG_ID,
   AJ_PRESENTATION_REVISION,
   LEGACY_AJ_CATALOG_ID,
@@ -34,6 +35,23 @@ const legacyArtifacts = [
 ] as const;
 
 describe("AJ 展示契约所有权", () => {
+  it("owns every built-in expert subtitle at the AJ contract boundary", () => {
+    expect(Object.keys(AJ_BUILT_IN_EXPERT_SUBTITLES).sort()).toEqual(
+      [...approachSchema.options].sort(),
+    );
+    for (const subtitle of Object.values(AJ_BUILT_IN_EXPERT_SUBTITLES))
+      expect(subtitle.trim()).toBeTruthy();
+  });
+
+  it("只通过 opaque avatar reference 传输本地身份资产", () => {
+    expect(base.presentationAvatarSchema.parse({ reference: "aj-expert:cbt" })).toEqual({
+      reference: "aj-expert:cbt",
+    });
+    expect(
+      base.presentationAvatarSchema.safeParse({ reference: "https://example.com/avatar.png" }).success,
+    ).toBe(false);
+  });
+
   it("把服务端专家元数据映射成通用 origin 并随 A2UI 传输", () => {
     const origin = ajPresentationOrigin({
       taskId: "task-1",
@@ -43,7 +61,9 @@ describe("AJ 展示契约所有权", () => {
       configurationRevision: "revision-7",
       theme: "blue",
       layout: "step_by_step",
+      subtitle: "把发生的事，和心里的推测分开看",
       status: "active",
+      avatarReference: "aj-expert:cbt",
       sources: [{ library: "练习库", title: "思路记录", readStatus: "document" }],
       privateServerField: "不会进入公共展示",
     });
@@ -51,10 +71,12 @@ describe("AJ 展示契约所有权", () => {
       id: "task-1",
       name: "林老师",
       role: "分步整理",
+      subtitle: "把发生的事，和心里的推测分开看",
       revision: "revision-7",
       theme: "blue",
       layout: "numbered",
       state: "continuing",
+      avatar: { reference: "aj-expert:cbt" },
       sources: [{ library: "练习库", title: "思路记录", readStatus: "document" }],
     });
     const messages = toAjA2ui(3, legacyArtifacts, { origin });

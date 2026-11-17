@@ -25,7 +25,7 @@ import {
   validateForm,
   type A2uiMessage,
 } from "./index";
-import { createRunReader, type RunProgress } from "./stream";
+import { createRunReader, RunProtocolError, type RunProgress } from "./stream";
 
 const compile = (values: unknown) =>
   legacyArtifactsToA2ui(values, {
@@ -799,5 +799,85 @@ describe("AG-UI 传输恢复", () => {
     );
     brandedReader.push(`data: ${JSON.stringify(events[0])}\n\n`);
     expect(branded.at(-1)?.step).toBe("阿 J 先生正在想一想…");
+  });
+
+  it("新的未标识阶段不会沿用上一阶段的稳定标识", () => {
+    const received: RunProgress[] = [];
+    const reader = createRunReader("run", (next) => {
+      received.push({ ...next });
+    });
+    const unknown = [
+      { type: "RUN_STARTED", runId: "run", threadId: "1" },
+      {
+        type: "STEP_STARTED",
+        stepName: "provider-defined step",
+        metadata: { stageId: "expert_handoff" },
+      },
+      { type: "STEP_STARTED", stepName: "provider step without metadata" },
+      {
+        type: "STEP_STARTED",
+        stepName: "invalid identifier is ignored",
+        metadata: { stageId: "Not-A-Stage" },
+      },
+    ];
+    for (const event of unknown)
+      reader.push(`data: ${JSON.stringify(event)}\n\n`);
+    expect(received.at(-1)?.step).toBe("invalid identifier is ignored");
+    expect(received.at(-1)).not.toHaveProperty("stageId");
+  });
+
+  it("RUN_ERROR 保留机器码和重试语义", () => {
+    const reader = createRunReader("run");
+    reader.push(`data: ${JSON.stringify({
+      type: "RUN_STARTED",
+      runId: "run",
+      threadId: "1",
+    })}\n\n`);
+    let failure: unknown;
+    try {
+      reader.push(`data: ${JSON.stringify({
+        type: "RUN_ERROR",
+        message: "服务暂时不可用，本次尚未开始生成。",
+        code: "SERVICE_PROBLEM",
+        metadata: { retryable: true, definitive: true },
+      })}\n\n`);
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(RunProtocolError);
+    expect(failure).toMatchObject({
+      code: "SERVICE_PROBLEM",
+      retryable: true,
+      definitive: true,
+    });
+  });
+
+  it("过渡消息独立于最终文字，并由稳定标识去重保留", () => {
+    const preamble = {
+      id: "handoff_preamble_12",
+      text: "我听到了，正在请认知行为专家一起看这件事。",
+    };
+    const reader = createRunReader("run");
+    for (const event of [
+      { type: "RUN_STARTED", runId: "run", threadId: "1" },
+      {
+        type: "STEP_STARTED",
+        stepName: "专家准备中",
+        metadata: { stageId: "expert_handoff", interimMessage: preamble },
+      },
+      {
+        type: "STEP_STARTED",
+        stepName: "专家思考中",
+        metadata: { stageId: "expert_working" },
+      },
+      { type: "TEXT_MESSAGE_START", messageId: "m", role: "assistant" },
+      { type: "TEXT_MESSAGE_CONTENT", messageId: "m", delta: "专家最终回复。" },
+      { type: "TEXT_MESSAGE_END", messageId: "m" },
+      { type: "RUN_FINISHED", runId: "run", threadId: "1" },
+    ])
+      reader.push(`data: ${JSON.stringify(event)}\n\n`);
+    const result = reader.finish();
+    expect(result.interimMessage).toEqual(preamble);
+    expect(result.text).toBe("专家最终回复。");
   });
 });

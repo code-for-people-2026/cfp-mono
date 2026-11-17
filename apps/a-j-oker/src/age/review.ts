@@ -7,6 +7,7 @@ import { workingDeadline } from "../operations/deadlines";
 import { isAdministrator, settings } from "../operations/policy";
 import { MANUAL_AGE_ASSURANCE, MANUAL_AGE_SOURCE, ageNotice } from "./policy";
 import { transaction } from "../operations/transaction";
+import { inputSchema } from "../domain/contracts";
 
 const AGE_REVIEW_STAGE = "age_review";
 const AGE_REVIEW_CATEGORY = "other";
@@ -19,6 +20,69 @@ const CREATION = {
   conflict: { source: "moderation", evidence: "本人申报与新的身份核验结果冲突。", actor: () => "system:age-verification", reason: "年龄申报与核验结果冲突" },
 } as const;
 type CreationKind = keyof typeof CREATION;
+export type AgeRiskEvidenceSource = {
+  kind: "conversation";
+  triggerText: string;
+  sessionId: number;
+  requestId: string;
+};
+type EvidenceMessage = { role: "user" | "assistant"; text: string; trigger: boolean; truncated: boolean; turnId?: number; timestamp?: string };
+type ConversationEvidence = {
+  sessionId: number;
+  requestId: string;
+  messages: EvidenceMessage[];
+  truncation: { messageLimit: number; turnLimit: number; characterLimit: number; omittedTurns: number; anyTextTruncated: boolean };
+};
+const EVIDENCE_MESSAGE_LIMIT = 9;
+const EVIDENCE_PRIOR_TURN_LIMIT = Math.floor((EVIDENCE_MESSAGE_LIMIT - 1) / 2);
+const EVIDENCE_CHARACTER_LIMIT = 1_000;
+
+function boundedMessage(role: EvidenceMessage["role"], value: string, trigger = false, source?: { id: number; createdAt: string }): EvidenceMessage {
+  return { role, text: value.slice(0, EVIDENCE_CHARACTER_LIMIT), trigger, truncated: value.length > EVIDENCE_CHARACTER_LIMIT,
+    ...(source ? { turnId: source.id, timestamp: source.createdAt } : {}) };
+}
+
+async function conversationEvidence(payload: Payload, owner: string, source: AgeRiskEvidenceSource, req: PayloadRequest): Promise<ConversationEvidence> {
+  // Prove ownership before reading a single historical turn. An unowned or
+  // stale session identifier is rejected rather than used as a lookup hint.
+  const session = (await payload.find({ collection: "sessions", overrideAccess: true, req, limit: 1, where: {
+    and: [{ id: { equals: source.sessionId } }, { owner: { equals: owner } }],
+  } })).docs[0];
+  if (!session) throw new AppError(403, "会话不存在或不属于当前身份");
+  // inspectInput runs while the owner-scoped session lease is held and before
+  // the triggering row is created. Therefore every completed row visible now
+  // is an antecedent; a later message cannot enter this snapshot concurrently.
+  const result = await payload.find({ collection: "greetings", overrideAccess: true, req, limit: EVIDENCE_PRIOR_TURN_LIMIT, sort: "-id", where: {
+    and: [
+      { owner: { equals: owner } },
+      { sessionId: { equals: source.sessionId } },
+      { status: { equals: "completed" } },
+    ],
+  } });
+  // Payload returns the newest bounded window. Reverse it for reviewer-facing
+  // chronology without ever loading the obsolete beginning of a long session.
+  const rows = [...result.docs].reverse();
+  const prior: EvidenceMessage[] = [];
+  for (const row of rows) {
+    const parsed = inputSchema.safeParse(row.input);
+    const source = { id: row.id, createdAt: row.createdAt };
+    if (parsed.success && parsed.data.text) prior.push(boundedMessage("user", parsed.data.text, false, source));
+    if (row.greeting) prior.push(boundedMessage("assistant", String(row.greeting), false, source));
+  }
+  const trigger = boundedMessage("user", source.triggerText, true);
+  return {
+    sessionId: source.sessionId,
+    requestId: source.requestId,
+    messages: [...prior, trigger],
+    truncation: {
+      messageLimit: EVIDENCE_MESSAGE_LIMIT,
+      turnLimit: EVIDENCE_PRIOR_TURN_LIMIT,
+      characterLimit: EVIDENCE_CHARACTER_LIMIT,
+      omittedTurns: Math.max(0, result.totalDocs - rows.length),
+      anyTextTruncated: [...prior, trigger].some(message => message.truncated),
+    },
+  };
+}
 
 export const isAgeReviewCase = (row: Pick<SafetyCase, "stage">) => row.stage === AGE_REVIEW_STAGE;
 
@@ -86,21 +150,24 @@ export function reviewProjection(profile: AgeProfile | undefined, row: SafetyCas
   };
 }
 
-async function create(payload: Payload, owner: string, req: PayloadRequest, kind: CreationKind, parent?: SafetyCase) {
+async function create(payload: Payload, owner: string, req: PayloadRequest, kind: CreationKind, parent?: SafetyCase, conversation?: ConversationEvidence) {
   const now = Date.now();
   const config = await settings(payload, req);
   const provenance = CREATION[kind];
+  const evidenceContent = conversation ? JSON.stringify(conversation) : provenance.evidence;
   const row = await payload.create({ collection: "safety-cases", overrideAccess: true, req, data: {
     receipt: randomUUID(), owner, source: provenance.source, status: parent ? "review" : "pending", severity: "normal",
     category: AGE_REVIEW_CATEGORY, stage: AGE_REVIEW_STAGE, revision: 0,
-    parentId: parent?.id,
+    parentId: parent?.id, sessionId: conversation?.sessionId, requestId: conversation?.requestId,
     acceptBy: workingDeadline(now, 1), resolveBy: workingDeadline(now, 7), feedbackBy: workingDeadline(now, 7),
     retainUntil: Number(config?.evidenceDays ?? 0) > 0 ? new Date(now + Number(config?.evidenceDays) * 86400_000).toISOString() : null,
     retentionBasis: config?.retentionBasis || "安全证据默认永久保留，不自动到期；仅限受控复核使用，数据权利申请另行处理",
   } });
   await payload.create({ collection: "safety-evidence", overrideAccess: true, req, data: {
-    caseId: row.id, excerpt: provenance.evidence, originalLength: provenance.evidence.length,
-    digest: createHash("sha256").update(provenance.evidence).digest("hex"),
+    caseId: row.id, excerpt: provenance.evidence, originalLength: evidenceContent.length,
+    digest: createHash("sha256").update(evidenceContent).digest("hex"),
+    provenance: provenance.evidence,
+    conversation: conversation || null,
   } });
   await audit(payload, provenance.actor(owner), "case.created", `case:${row.id}`, provenance.reason, { stage: AGE_REVIEW_STAGE, category: AGE_REVIEW_CATEGORY }, req);
   return row;
@@ -151,8 +218,9 @@ export async function requireApprovedReview(payload: Payload, owner: string, req
   return row;
 }
 
-export async function requireAgeRiskCase(payload: Payload, owner: string) {
+export async function requireAgeRiskCase(payload: Payload, owner: string, source?: AgeRiskEvidenceSource) {
   return transaction(payload, async (req) => {
+    const conversation = source?.kind === "conversation" ? await conversationEvidence(payload, owner, source, req) : undefined;
     const profile = (await payload.find({ collection: "age-profiles", overrideAccess: true, req, limit: 1, where: { owner: { equals: owner } } })).docs[0];
     const restriction = {
       state: "needs_review", additionalVerification: "required", challenge: null, challengePurpose: null,
@@ -161,7 +229,9 @@ export async function requireAgeRiskCase(payload: Payload, owner: string) {
     const restricted = profile
       ? await payload.update({ collection: "age-profiles", id: profile.id, overrideAccess: true, req, data: restriction })
       : await payload.create({ collection: "age-profiles", overrideAccess: true, req, data: { owner, ...restriction } });
-    return bindAgeRestriction(payload, restricted, req, "risk");
+    const row = await create(payload, restricted.owner, req, "risk", undefined, conversation);
+    await payload.update({ collection: "age-profiles", id: restricted.id, overrideAccess: true, req, data: { reference: reviewReference(row) } });
+    return row;
   });
 }
 

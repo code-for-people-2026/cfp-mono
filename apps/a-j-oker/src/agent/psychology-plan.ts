@@ -1,17 +1,39 @@
-import { approachSchema, greetingSchema } from "@cfp/a-j-oker-contracts";
+import {
+  approachSchema,
+  greetingSchema,
+  handoffPreambleSchema,
+} from "@cfp/a-j-oker-contracts";
 import { artifactsSchema } from "@cfp/base-chat-protocol";
 import { z } from "zod";
 
-export const psychologyConsultationSchema = z
+const psychologyConsultationBaseSchema = z
   .object({
     request: z.string().trim().min(1).max(1200),
     urgency: z.enum(["routine", "immediate"]),
     knowledgeQuery: z.string().trim().min(1).max(80).optional(),
+    // Produced by the coordinator in the same delegation decision. It is not
+    // expert output and must never be saved as a partial final greeting.
+    userFacingIntro: handoffPreambleSchema.optional(),
   })
   .strict();
 
+/** Internal continuation calls resume an already-active expert without a new handoff. */
+export const internalPsychologyConsultationSchema = psychologyConsultationBaseSchema;
+
+/** The coordinator's initial delegation is user-facing and must explain itself first. */
+export const psychologyConsultationSchema = psychologyConsultationBaseSchema
+  .superRefine((value, ctx) => {
+    if (value.urgency === "routine" && !value.userFacingIntro) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["userFacingIntro"],
+        message: "常规专家交接必须提供 12～320 字的阿 J 用户可见前导说明",
+      });
+    }
+  });
+
 export type PsychologyConsultation = z.infer<
-  typeof psychologyConsultationSchema
+  typeof psychologyConsultationBaseSchema
 >;
 
 export const psychologyPlanSubmissionSchema = z
@@ -65,6 +87,6 @@ export const psychologyA2ARequestSchema = z
     schemaVersion: z.literal(1),
     approach: approachSchema,
     configurationRevision: z.string().trim().min(1).max(256),
-    consultation: psychologyConsultationSchema,
+    consultation: internalPsychologyConsultationSchema,
   })
   .strict();

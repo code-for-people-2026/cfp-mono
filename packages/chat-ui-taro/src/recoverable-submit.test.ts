@@ -68,6 +68,31 @@ describe("recoverable submit controller", () => {
     expect(send.mock.calls[1][0].requestId).toBe("id-1");
   });
 
+  it("keeps the original ambiguous error and id through check-missing and retry", async () => {
+    const { controller, send, lookup } = setup();
+    const failure = new Error("original network failure");
+    send.mockRejectedValueOnce(failure);
+    await controller.submit(1, "same");
+
+    await expect(controller.check(1)).resolves.toMatchObject({
+      type: "missing",
+      error: failure,
+    });
+    expect(controller.pendingFor(1)?.requestId).toBe("id-1");
+
+    const retryFailure = new Error("second network failure");
+    send.mockRejectedValueOnce(retryFailure);
+    await controller.submit(1, "same");
+
+    expect(send.mock.calls.every(([submission]) => submission.requestId === "id-1"))
+      .toBe(true);
+    // The first public failure stays authoritative for this same request id.
+    await expect(controller.check(1)).resolves.toMatchObject({
+      type: "missing",
+      error: failure,
+    });
+  });
+
   it("creates a new id only after the server explicitly reports failure", async () => {
     const failed = { id: "failed", state: "failed" } as Result;
     const { controller, send } = setup({ status: failed });
@@ -79,6 +104,50 @@ describe("recoverable submit controller", () => {
     expect(send).toHaveBeenCalledTimes(2);
     expect(send.mock.calls[0][0].requestId).toBe("id-1");
     expect(send.mock.calls[1][0].requestId).toBe("id-2");
+  });
+
+  it("keeps the first definitive send failure after a missing confirmation", async () => {
+    const { controller, send, lookup } = setup();
+    const failure = Object.assign(new Error("服务暂时不可用，本次尚未开始生成"), {
+      code: "SERVICE_PROBLEM",
+      retryable: true,
+      definitive: true,
+    });
+    send.mockRejectedValueOnce(failure);
+    await controller.submit(1, "same");
+
+    await expect(controller.check(1)).resolves.toMatchObject({
+      type: "missing",
+      error: failure,
+    });
+
+    await controller.submit(1, "same");
+    expect(lookup).toHaveBeenCalledTimes(3);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls.every(([submission]) => submission.requestId === "id-1"))
+      .toBe(true);
+  });
+
+  it("uses a fresh id and error when changed input follows an old failure", async () => {
+    const { controller, send, lookup } = setup();
+    const oldFailure = Object.assign(
+      new Error("old service problem"),
+      { code: "SERVICE_PROBLEM", definitive: true },
+    );
+    send.mockRejectedValueOnce(oldFailure);
+    await controller.submit(1, "old");
+
+    const newFailure = new Error("new request failure");
+    send.mockRejectedValueOnce(newFailure);
+    await controller.submit(1, "new");
+
+    expect(send.mock.calls[0][0].requestId).toBe("id-1");
+    expect(send.mock.calls[1][0].requestId).toBe("id-2");
+    expect(lookup).toHaveBeenCalledTimes(2);
+    await expect(controller.check(1)).resolves.toMatchObject({
+      type: "missing",
+      error: newFailure,
+    });
   });
 
   it("retires an unknown request after a later failed lookup and creates one new id", async () => {

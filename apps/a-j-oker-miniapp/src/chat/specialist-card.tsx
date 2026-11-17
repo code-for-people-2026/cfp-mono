@@ -1,4 +1,7 @@
-import { ajPresentationOrigin } from "@cfp/a-j-oker-contracts";
+import {
+  AJ_BUILT_IN_EXPERT_SUBTITLES,
+  ajPresentationOrigin,
+} from "@cfp/a-j-oker-contracts";
 import { legacyArtifactsSchema } from "@cfp/base-chat-protocol";
 import type { Turn } from "./model";
 
@@ -20,7 +23,13 @@ export function specialistPresentationForTurn(turn: Turn) {
     turn.model === "product-guidance"
   )
     return undefined;
-  return ajPresentationOrigin(turn.specialist);
+  const origin = ajPresentationOrigin(turn.specialist);
+  return origin.subtitle
+    ? origin
+    : {
+        ...origin,
+        subtitle: AJ_BUILT_IN_EXPERT_SUBTITLES[turn.specialist.expertId],
+      };
 }
 
 export function activeSpecialistTurn(history: readonly Turn[]) {

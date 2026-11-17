@@ -15,7 +15,7 @@ import {
   toAjA2ui,
   toLegacyAjA2uiForClient,
 } from "@cfp/a-j-oker-contracts";
-import { AppError, turnSchema } from "../domain/contracts";
+import { AppError, turnSchema, type GenerationProgress } from "../domain/contracts";
 import type { GreetingService } from "../domain/greetings";
 import { requirePlatformInput } from "./service-scope";
 
@@ -94,7 +94,7 @@ export function agentStream(
   service: {
     generateGreeting: (
       args: z.infer<typeof turnSchema>,
-      progress?: (message: string) => void,
+      progress?: (stage: GenerationProgress) => void,
     ) => Promise<
       Pick<
         Awaited<ReturnType<GreetingService["generateGreeting"]>>,
@@ -107,7 +107,7 @@ export function agentStream(
           >
         >
     >;
-    resumeImage?: (id: number, apiKey?: string, progress?: (message: string) => void) => ReturnType<GreetingService["resumeImage"]>;
+    resumeImage?: (id: number, apiKey?: string, progress?: (stage: GenerationProgress) => void) => ReturnType<GreetingService["resumeImage"]>;
   },
   args: AgentArgs,
   resumeTurnId?: number,
@@ -131,11 +131,25 @@ export function agentStream(
           runId,
           protocolVersion: "1.0",
         });
+        // The first stage is real (this run has begun generating), not a
+        // fabricated timer stage. Stable IDs ride in generic metadata so old
+        // clients keep the human-readable step name.
         emit({
           type: EventType.STEP_STARTED,
           stepName: "阿 J 先生正在构思回应与作品",
+          metadata: { stageId: "generating" },
         });
-        const progress = (stepName: string) => emit({ type: EventType.STEP_STARTED, stepName });
+        const progress = (stage: GenerationProgress) =>
+          emit({
+            type: EventType.STEP_STARTED,
+            stepName: stage.stepName,
+            metadata: {
+              stageId: stage.stageId,
+              ...(stage.interimMessage
+                ? { interimMessage: stage.interimMessage }
+                : {}),
+            },
+          });
         if (resumeTurnId && !service.resumeImage) throw new AppError(409, "此服务不支持继续取图");
         const row = resumeTurnId ? await service.resumeImage!(resumeTurnId, args.apiKey, progress) : await service.generateGreeting(args, progress);
         emit({
@@ -173,13 +187,18 @@ export function agentStream(
         });
         emit({ type: EventType.RUN_FINISHED, threadId, runId });
       } catch (error) {
+        const appError = error instanceof AppError ? error : undefined;
         emit({
           type: EventType.RUN_ERROR,
           message:
             error instanceof AppError
               ? error.message
               : "本轮未能完成，请刷新记录后重试",
-          code: "GENERATION_FAILED",
+          code: appError?.code ?? "GENERATION_FAILED",
+          metadata: {
+            ...(appError?.retryable !== undefined ? { retryable: appError.retryable } : {}),
+            ...(appError?.definitive !== undefined ? { definitive: appError.definitive } : {}),
+          },
         });
       } finally {
         clearInterval(heartbeat);

@@ -67,6 +67,7 @@ export interface Config {
   };
   blocks: {};
   collections: {
+    'admin-initializations': AdminInitialization;
     'safety-cases': SafetyCase;
     'safety-alert-state': SafetyAlertState;
     'safety-evidence': SafetyEvidence;
@@ -101,6 +102,7 @@ export interface Config {
   };
   collectionsJoins: {};
   collectionsSelect: {
+    'admin-initializations': AdminInitializationsSelect<false> | AdminInitializationsSelect<true>;
     'safety-cases': SafetyCasesSelect<false> | SafetyCasesSelect<true>;
     'safety-alert-state': SafetyAlertStateSelect<false> | SafetyAlertStateSelect<true>;
     'safety-evidence': SafetyEvidenceSelect<false> | SafetyEvidenceSelect<true>;
@@ -166,6 +168,14 @@ export interface AdminAuthOperations {
     email: string;
     password: string;
   };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "admin-initializations".
+ */
+export interface AdminInitialization {
+  id: number;
+  key: string;
 }
 /**
  * 通过本资源的操作区受理、复核、处置或追加版本；原始记录只读。
@@ -254,6 +264,16 @@ export interface SafetyEvidence {
   excerpt?: string | null;
   digest: string;
   originalLength?: number | null;
+  provenance?: string | null;
+  conversation?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   purgedAt?: string | null;
   purgeReason?: string | null;
   updatedAt: string;
@@ -474,6 +494,10 @@ export interface AgentConfig {
   prompt: string;
   theme?: ('sage' | 'blue' | 'plum' | 'amber') | null;
   preferredLayout?: ('reflection' | 'step_by_step' | 'action_plan') | null;
+  /**
+   * 展示在专家卡片名称下的一句话，说明这位专家能提供什么帮助。未填写或清空保存时使用内置默认。
+   */
+  subtitle?: string | null;
   /**
    * 运行时强制过滤。留空表示该专家不生成回应作品，只回复文字。
    */
@@ -745,6 +769,7 @@ export interface Greeting {
   status: 'running' | 'completed' | 'failed';
   input: import('@cfp/a-j-oker-contracts').Inspiration;
   greeting?: string | null;
+  handoffPreamble?: string | null;
   association?: string | null;
   approach?: string | null;
   specialist?: import('./agent/specialist-state').SpecialistState | null;
@@ -907,6 +932,13 @@ export interface PayloadMigration {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "admin-initializations_select".
+ */
+export interface AdminInitializationsSelect<T extends boolean = true> {
+  key?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "safety-cases_select".
  */
 export interface SafetyCasesSelect<T extends boolean = true> {
@@ -975,6 +1007,8 @@ export interface SafetyEvidenceSelect<T extends boolean = true> {
   excerpt?: T;
   digest?: T;
   originalLength?: T;
+  provenance?: T;
+  conversation?: T;
   purgedAt?: T;
   purgeReason?: T;
   updatedAt?: T;
@@ -1113,6 +1147,7 @@ export interface AgentConfigsSelect<T extends boolean = true> {
   prompt?: T;
   theme?: T;
   preferredLayout?: T;
+  subtitle?: T;
   allowedComponents?: T;
   preferredComponents?: T;
   knowledgeBases?: T;
@@ -1309,6 +1344,7 @@ export interface GreetingsSelect<T extends boolean = true> {
   status?: T;
   input?: T;
   greeting?: T;
+  handoffPreamble?: T;
   association?: T;
   approach?: T;
   specialist?: T;
