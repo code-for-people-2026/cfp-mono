@@ -69,7 +69,7 @@ describe("recoverable submit controller", () => {
   });
 
   it("keeps the original ambiguous error and id through check-missing and retry", async () => {
-    const { controller, send, lookup } = setup();
+    const { controller, send } = setup();
     const failure = new Error("original network failure");
     send.mockRejectedValueOnce(failure);
     await controller.submit(1, "same");

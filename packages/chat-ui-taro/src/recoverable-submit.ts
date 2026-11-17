@@ -19,10 +19,8 @@ export interface RecoverableSubmission<
   request: TRequest;
 }
 
-export interface RecoverableFailureRecord<
-  TScope extends string | number,
-  TRequest,
-> extends SubmissionFailureMetadata {
+export interface RecoverableFailureRecord<TScope extends string | number>
+  extends SubmissionFailureMetadata {
   scope: TScope;
   requestId: string;
   fingerprint: string;
@@ -103,7 +101,7 @@ export function createRecoverableSubmitController<
   TResult,
 >(config: RecoverableSubmitConfig<TScope, TRequest, TResult>) {
   const pending = new Map<TScope, StoredSubmission<TScope, TRequest>>();
-  const failures = new Map<TScope, RecoverableFailureRecord<TScope, TRequest>>();
+  const failures = new Map<TScope, RecoverableFailureRecord<TScope>>();
   let activeOperation: Operation<TScope> | undefined;
   let epoch = 0;
 
@@ -192,7 +190,7 @@ export function createRecoverableSubmitController<
     },
     failureFor(
       scope: TScope,
-    ): RecoverableFailureRecord<TScope, TRequest> | undefined {
+    ): RecoverableFailureRecord<TScope> | undefined {
       const current = failures.get(scope);
       return current ? { ...current } : undefined;
     },
