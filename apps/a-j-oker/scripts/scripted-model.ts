@@ -6,7 +6,7 @@ export class ScriptedModel extends BaseLlm {
   private outputIndex = 0;
   constructor(
     private output: Record<string, unknown> | Record<string, unknown>[] = {
-      greeting: "愿你的日子像这份灵感一样，温暖明亮，顺心开花。",
+      aJoker: "愿你的日子像这份灵感一样，温暖明亮，顺心开花。",
       association:
         "测试模型的固定响应，用于验证工具与持久化，不是模型质量证据。",
     },
@@ -37,7 +37,7 @@ export class ScriptedModel extends BaseLlm {
         needsImmediateSupport: false,
         usedSourceIds: [],
         reply: {
-          greeting: String(output.greeting ?? "测试模型固定回应"),
+          aJoker: String(output.aJoker ?? "测试模型固定回应"),
           association: String(output.association ?? "测试链路"),
           approach,
           ...(artifacts ? { artifacts } : {}),
@@ -57,7 +57,7 @@ export class ScriptedModel extends BaseLlm {
         userFacingIntro: "我会先请对应方法的心理专家接手这一步。",
       };
     } else {
-      name = "save_greeting";
+      name = "save_a_j_oker";
       args = output;
       this.outputIndex++;
     }

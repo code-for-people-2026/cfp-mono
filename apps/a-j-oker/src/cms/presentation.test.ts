@@ -16,9 +16,9 @@ describe("CMS 验收阅读方式", () => {
       expect(config?.admin?.description).toBeTruthy();
       expect(config?.admin?.defaultColumns).not.toContain("owner");
     }
-    expect(collectionViews.greetings.defaultColumns?.slice(0, 2)).toEqual([
+    expect(collectionViews["a-j-oker"].defaultColumns?.slice(0, 2)).toEqual([
       "input",
-      "greeting",
+      "aJoker",
     ]);
     expect(collectionViews.sessions.useAsTitle).toBe("title");
   });
@@ -52,7 +52,7 @@ describe("CMS 验收阅读方式", () => {
                 { text: "内部上下文" },
                 {
                   functionCall: {
-                    name: "save_greeting",
+                    name: "save_a_j_oker",
                     args: { secret: "不显示" },
                   },
                 },
@@ -61,7 +61,7 @@ describe("CMS 验收阅读方式", () => {
           },
         ],
       }),
-    ).toBe("1 条执行事件\n调用工具：save_greeting");
+    ).toBe("1 条执行事件\n调用工具：save_a_j_oker");
     expect(executionSummary(undefined)).toBe("0 条执行事件\n尚无工具调用");
   });
 });

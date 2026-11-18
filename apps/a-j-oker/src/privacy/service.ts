@@ -16,7 +16,7 @@ import { ExportBudget } from "./export-limits";
 import { updateProfile } from "./profile-store";
 import { withCredentialLock } from "../server/credential-lock";
 import { revokeCredentials } from "../server/auth";
-import { publicGreetingState } from "../domain/public-greeting";
+import { publicAJokerState } from "../domain/public-a-j-oker";
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 const consentSchema = z.object({ version: z.string(), core: z.literal(true), model: z.literal(true), sensitive: z.boolean(), external: z.boolean(), externalRecipient: z.object({ name: z.string().trim().min(2).max(200), contact: z.string().trim().min(3).max(200), region: z.string().trim().min(2).max(100), privacyUrl: z.string().url().max(500) }).strict().optional() }).strict().refine((value) => !value.external || !!value.externalRecipient, "外部授权需要先填写实际接收方、联系方式、地域和政策链接");
@@ -24,7 +24,7 @@ const contentCollections = [
   "adk-sessions",
   "a2a-execution-tasks",
   "a2a-request-ledgers",
-  "greetings",
+  "a-j-oker",
   "sessions",
   "session-locks",
 ] as const;
@@ -116,7 +116,7 @@ export class PrivacyService {
     const historyPageSize = 32;
     let cursor = 0;
     while (!usesSensitiveContent && !profile?.historyInspected) {
-      const rows = (await this.repo.payload.find({ collection: "greetings", overrideAccess: false, context: { helloOwner: this.repo.owner.id }, depth: 0, limit: historyPageSize, pagination: false, sort: "id", select: { id: true, input: true }, where: { and: [{ owner: { equals: this.repo.owner.id } }, { id: { greater_than: cursor } }] } })).docs;
+      const rows = (await this.repo.payload.find({ collection: "a-j-oker", overrideAccess: false, context: { helloOwner: this.repo.owner.id }, depth: 0, limit: historyPageSize, pagination: false, sort: "id", select: { id: true, input: true }, where: { and: [{ owner: { equals: this.repo.owner.id } }, { id: { greater_than: cursor } }] } })).docs;
       usesSensitiveContent = rows.some((row) => hasSensitiveContent(row.input));
       if (usesSensitiveContent || rows.length < historyPageSize) break;
       cursor = rows[rows.length - 1].id;
@@ -186,15 +186,15 @@ export class PrivacyService {
     const age = await ageProfile(this.repo.payload, this.repo.owner.id);
     const ageVerification = age ? { state: age.state, declaration: age.declaration, source: age.source, assurance: age.assurance, verifiedAt: age.verifiedAt, expiresAt: age.expiresAt, noticeVersion: age.noticeVersion, consentedAt: age.consentedAt, reference: age.reference, additionalVerification: age.additionalVerification } : null;
     const retainedSafetyRecords: unknown[] = [];
-    const result = { interactionSafety: await new InteractionService(this.repo.payload, this.repo.owner).status(), retainedSafetyRecords, userProfile: await exportProfile(this.repo.payload, this.repo.owner.id), ageVerification, format: "hello-agent-personal-data-v1", exportedAt: new Date().toISOString(), notice: "用户输入与上传图片保持原始归属；greetings 中的回应和 artifacts 为 AI 生成，外部来源由客户端声明。内部执行快照可能含后台参考资料，不纳入自助导出；如需其他本人数据，可通过隐私权利请求申请核验副本。", metadata: aiMetadata(`personal-export:${this.repo.owner.id}`), records, media, credentials, privacy: profile ? { state: profile.state, consent: profile.consent, events: profile.events, expiresAt: profile.expiresAt } : null };
+    const result = { interactionSafety: await new InteractionService(this.repo.payload, this.repo.owner).status(), retainedSafetyRecords, userProfile: await exportProfile(this.repo.payload, this.repo.owner.id), ageVerification, format: "hello-agent-personal-data-v1", exportedAt: new Date().toISOString(), notice: "用户输入与上传图片保持原始归属；records[\"a-j-oker\"] 中的回应和 artifacts 为 AI 生成，外部来源由客户端声明。内部执行快照可能含后台参考资料，不纳入自助导出；如需其他本人数据，可通过隐私权利请求申请核验副本。", metadata: aiMetadata(`personal-export:${this.repo.owner.id}`), records, media, credentials, privacy: profile ? { state: profile.state, consent: profile.consent, events: profile.events, expiresAt: profile.expiresAt } : null };
     budget.add(result, false);
     // ADK snapshots mix visitor input with admin-only knowledgeContext and
     // tool state. The visitor-facing conversation is exported below instead.
-    for (const collection of ["sessions", "greetings"] as const) {
+    for (const collection of ["sessions", "a-j-oker"] as const) {
       records[collection] = [];
       for await (const row of this.exportRows(collection)) {
-        const projected = collection === "greetings" ? publicGreetingState(row) : row;
-        if (collection === "greetings" && "status" in row && row.status === "completed") {
+        const projected = collection === "a-j-oker" ? publicAJokerState(row) : row;
+        if (collection === "a-j-oker" && "status" in row && row.status === "completed") {
           records[collection].push(budget.add({ ...projected, aiLabel: row.mode === "external" ? "AI 生成（外部客户端声明）" : "AI 生成", metadata: aiMetadata(`${this.repo.owner.id}:${row.id}:${row.fingerprint}`, row.mode === "external") }));
         } else records[collection].push(budget.add(projected));
       }

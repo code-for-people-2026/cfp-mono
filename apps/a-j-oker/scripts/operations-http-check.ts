@@ -24,7 +24,7 @@ assert.equal((await call("/api/operations/settings", { headers: { Cookie: review
 assert.equal((await call("/api/safety-evidence", { headers: { Cookie: adminCookie } })).status, 403);
 for (const path of ["/api/agent-configs", "/api/knowledge-bases", "/api/hello-admin/turns/1/knowledge"]) assert.equal((await call(path, { headers: { Cookie: reviewerCookie } })).status, 403);
 assert.equal((await call("/api/hello-admin/knowledge/1/test", { method: "POST", headers: { Cookie: reviewerCookie, Origin: base } })).status, 403);
-assert.equal((await call("/api/greetings", { headers: { Cookie: reviewerCookie } })).status, 403);
+assert.equal((await call("/api/a-j-oker", { headers: { Cookie: reviewerCookie } })).status, 403);
 assert.equal((await call("/api/operations/settings", { method: "POST", headers: { Cookie: adminCookie, Origin: "https://untrusted.example", "Content-Type": "application/json" }, body: "{}" })).status, 403);
 const statusResponse = await call("/api/operations/status", { headers: { Cookie: adminCookie } });
 const status = await statusResponse.json(); assert.equal(status.imageReviewConfigured, false); assert.equal(status.configuration.configured, false);

@@ -996,7 +996,7 @@ export default function Chat() {
                           <>
                             <MessageText aiGenerated={row.status === "completed"} external={row.mode === "external"}>
                               {row.status === "completed"
-                                ? row.greeting
+                                ? row.aJoker
                                 : row.status === "failed"
                                   ? row.error || "这一次没有完成，请查看下方提示。"
                                   : "这一轮尚未完成，请先确认上次发送；若长时间未完成，请联系开发者。"}
@@ -1073,10 +1073,10 @@ export default function Chat() {
                     <View className="message-footer">
                       <View className="message-actions">
                         {row.imageGeneration?.canResume && <Button className="control message-action" disabled={disabled} onClick={() => void resumeImage(row)}>继续取图</Button>}
-                        {row.status === "completed" && row.greeting && (
+                        {row.status === "completed" && row.aJoker && (
                           <CopyMessage
                             external={row.mode === "external"}
-                            value={row.greeting}
+                            value={row.aJoker}
                             label={specialistPresentationForTurn(row) ? "复制 AI 专家的回复" : "复制阿 J 先生的回复"}
                           />
                         )}

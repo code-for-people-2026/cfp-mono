@@ -123,7 +123,7 @@ export function evidenceFromSnapshot(
 export async function readTurnKnowledge(payload: Payload, turnId: number) {
   // Called only after administrator authentication; never exposed through visitor responses.
   const turn = await payload.findByID({
-    collection: "greetings",
+    collection: "a-j-oker",
     id: turnId,
     depth: 0,
   });

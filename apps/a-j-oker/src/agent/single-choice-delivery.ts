@@ -1,6 +1,6 @@
-import type { Greeting } from "../domain/contracts";
+import type { AJoker } from "../domain/contracts";
 
-export function singleChoiceDeliveryError(required: boolean, reply: Greeting) {
+export function singleChoiceDeliveryError(required: boolean, reply: AJoker) {
   if (!required) return undefined;
   const artifacts = reply.artifacts ?? [];
   const form = artifacts.length === 1 && artifacts[0].kind === "form" ? artifacts[0] : undefined;
@@ -10,7 +10,7 @@ export function singleChoiceDeliveryError(required: boolean, reply: Greeting) {
   return undefined;
 }
 
-export function singleOpenQuestionDeliveryError(required: boolean, reply: Greeting) {
+export function singleOpenQuestionDeliveryError(required: boolean, reply: AJoker) {
   if (!required) return undefined;
   const artifacts = reply.artifacts ?? [];
   const form = artifacts.length === 1 && artifacts[0].kind === "form" ? artifacts[0] : undefined;
@@ -22,7 +22,7 @@ export function singleOpenQuestionDeliveryError(required: boolean, reply: Greeti
 
 export function constrainedFormDeliveryError(
   constraints: { singleChoiceOnly?: boolean; singleOpenQuestionOnly?: boolean },
-  reply: Greeting,
+  reply: AJoker,
 ) {
   return singleChoiceDeliveryError(constraints.singleChoiceOnly === true, reply)
     || singleOpenQuestionDeliveryError(constraints.singleOpenQuestionOnly === true, reply);

@@ -367,7 +367,7 @@ input {
   width: 1248px;
   height: 52px;
   pointer-events: none;
-  animation: dancing-loader-sprite 1.6s steps(24, end) infinite;
+  animation: dancing-loader-sprite 1.92s steps(24, end) infinite;
 }
 .dancing-loader__dots {
   display: flex;

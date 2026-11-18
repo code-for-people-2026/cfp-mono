@@ -1,6 +1,6 @@
 # 主 Agent 协调独立心理 subagent，统一保存最终回复
 
-平台与 BYOK 入口按支持性回应、CBT、ACT、DBT、行为、焦点解决、自我关怀和积极心理学建立八个独立 ADK LlmAgent，通过 AgentTool 让主 Agent 按需咨询并取回结构化心理方案；主 Agent 统一处理阿J口吻和作品，仅它持有 save_greeting。选择返回方案的委托调用而非转交用户对话，可让不同方案先被整合，再沿用既有授权、校验和唯一保存流程。
+平台与 BYOK 入口按支持性回应、CBT、ACT、DBT、行为、焦点解决、自我关怀和积极心理学建立八个独立 ADK LlmAgent，通过 AgentTool 让主 Agent 按需咨询并取回结构化心理方案；主 Agent 统一处理阿J口吻和作品，仅它持有 save_a_j_oker。选择返回方案的委托调用而非转交用户对话，可让不同方案先被整合，再沿用既有授权、校验和唯一保存流程。
 
 每个专家使用独立的本轮执行会话，仍归同一个 PayloadSessionService 管理；复用真实用户输入、历史和图片，不把主 Agent 的转述冒充用户事实。默认 AgentTool 会改用专家名作为 appName，违背现有执行会话范围，因此使用一个执行适配器固定 hello_agent 范围并按轮次/流派隔离。没有新增产品数据库或第二份聊天记录。
 

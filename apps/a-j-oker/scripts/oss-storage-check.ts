@@ -18,8 +18,8 @@ process.env.DEEPSEEK_API_KEY = "scripted-model-only";
 const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
 const { MediaService } = await import("../src/domain/media");
-const { GreetingService } = await import("../src/domain/greetings");
-const { runGreeting } = await import("../src/agent/runtime");
+const { AJokerService } = await import("../src/domain/a-j-oker");
+const { runAJoker } = await import("../src/agent/runtime");
 const { createMcpServer } = await import("../src/server/mcp");
 const { configuredImageStore } = await import("../src/storage/oss");
 const config = await (await import("../payload.config")).default;
@@ -69,9 +69,9 @@ try {
   await (await import("./privacy-test-fixture")).consentForFixture(repo);
   const media = new MediaService(repo, () => store);
   const model = new ScriptedModel();
-  const service = new GreetingService(
+  const service = new AJokerService(
     repo,
-    (args) => runGreeting(args, model),
+    (args) => runAJoker(args, model),
     media,
     async () => "allow", // Synthetic reviewers; this suite checks storage.
     { moderate: syntheticTextReview },
@@ -107,7 +107,7 @@ try {
   console.log("✓ 跨用户请求、伪造其他用户对象引用，均在访问存储前拒绝");
 
   const session = await service.createSession();
-  await service.generateGreeting({
+  await service.generateAJoker({
     sessionId: session.id,
     requestId: randomUUID(),
     mode: "platform",
@@ -142,7 +142,7 @@ try {
   await server.close();
   console.log("✓ 自带 Agent 的 MCP 图片读取兼容新存储");
 
-  const legacy = await new GreetingService(repo, undefined, undefined, async () => "allow", { moderate: syntheticTextReview }).upload(original);
+  const legacy = await new AJokerService(repo, undefined, undefined, async () => "allow", { moderate: syntheticTextReview }).upload(original);
   const old = await repo.get("media", legacy.id);
   corrupt = true;
   await assert.rejects(() => media.migrate(legacy.id), /完整性/);
@@ -157,7 +157,7 @@ try {
   assert.equal((await repo.get("media", legacy.id)).base64, null);
   console.log("✓ 迁移校验失败保留原图；成功后清空旧内容且可安全重试");
 
-  const interrupted = await new GreetingService(repo, undefined, undefined, async () => "allow", { moderate: syntheticTextReview }).upload(original);
+  const interrupted = await new AJokerService(repo, undefined, undefined, async () => "allow", { moderate: syntheticTextReview }).upload(original);
   const previous = await repo.get("media", interrupted.id);
   const recordsBefore = (await repo.all("media")).length;
   const objectsBefore = objects.size;
@@ -255,7 +255,7 @@ try {
     ).status,
     401,
   );
-  const adminImage = await new GreetingService(repo, undefined, undefined, async () => "allow", { moderate: syntheticTextReview }).upload(original);
+  const adminImage = await new AJokerService(repo, undefined, undefined, async () => "allow", { moderate: syntheticTextReview }).upload(original);
   const password = randomUUID();
   await payload.create({
     collection: "admins",

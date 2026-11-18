@@ -60,7 +60,7 @@ const ajArtifactsSchema = z
   });
 
 export const replySchema = z.object({
-  greeting: z.string().trim().min(2).max(1000),
+  aJoker: z.string().trim().min(2).max(1000),
   association: z.string().trim().min(1).max(500),
   approach: approachSchema.optional(),
   artifacts: ajArtifactsSchema.optional(),

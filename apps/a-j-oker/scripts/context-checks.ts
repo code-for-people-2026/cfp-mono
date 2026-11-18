@@ -2,16 +2,16 @@ import { syntheticTextReview } from "./synthetic-text-review";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { Repository } from "../src/cms/repository";
-import type { Greeting } from "../src/payload-types";
+import type { AJoker } from "../src/payload-types";
 import { ContextService } from "../src/domain/context";
-import { GreetingService } from "../src/domain/greetings";
+import { AJokerService } from "../src/domain/a-j-oker";
 
 export async function verifyContext(repo: Repository) {
   const session = await repo.create("sessions", { title: "记忆血条测试" });
-  const rows: Greeting[] = [];
+  const rows: AJoker[] = [];
   for (let i = 0; i < 8; i++)
     rows.push(
-      await repo.create("greetings", {
+      await repo.create("a-j-oker", {
         sessionId: session.id,
         requestKey: randomUUID(),
         fingerprint: "test",
@@ -21,7 +21,7 @@ export async function verifyContext(repo: Repository) {
           text: `第${i}轮：用户明确说过喜欢小番茄。${"阳台种植日记。".repeat(230)}`,
           mediaIds: [],
         },
-        greeting: "这是用于验证压缩逻辑的固定测试回复，不代表真实模型。",
+        aJoker: "这是用于验证压缩逻辑的固定测试回复，不代表真实模型。",
       }),
     );
   let now = Date.now();
@@ -40,11 +40,11 @@ export async function verifyContext(repo: Repository) {
   await assert.rejects(() => context.ensureRoom(session.id), /空间已满/);
   await assert.rejects(
     () =>
-      new GreetingService(repo, undefined, undefined, undefined, { moderate: syntheticTextReview }).acceptExternal({
+      new AJokerService(repo, undefined, undefined, undefined, { moderate: syntheticTextReview }).acceptExternal({
         sessionId: session.id,
         requestId: randomUUID(),
         input: { text: "外部不能绕过" },
-        output: { greeting: "固定回复", association: "测试" },
+        output: { aJoker: "固定回复", association: "测试" },
         model: "test",
       }),
     /空间已满/,
@@ -87,7 +87,7 @@ export async function verifyContext(repo: Repository) {
     1,
   );
   assert.equal(calls, 1);
-  assert.equal((await new GreetingService(repo, undefined, undefined, undefined, { moderate: syntheticTextReview }).history(session.id)).length, 8);
+  assert.equal((await new AJokerService(repo, undefined, undefined, undefined, { moderate: syntheticTextReview }).history(session.id)).length, 8);
   const restored = new ContextService(new Repository(repo.payload, repo.owner));
   const model = await restored.modelContext(session.id);
   assert.equal(model.memory, next.summary);
@@ -128,18 +128,18 @@ export async function verifyContext(repo: Repository) {
   // 不能再沿用旧的前 100 条查询，否则长对话会反复读取早期内容。
   const archive = await repo.create("sessions", { title: "分页测试" });
   for (let i = 0; i < 102; i++)
-    await repo.create("greetings", {
+    await repo.create("a-j-oker", {
       sessionId: archive.id,
       requestKey: randomUUID(),
       fingerprint: "test",
       mode: "external",
       status: "completed",
       input: { text: `记录${i}`, mediaIds: [] },
-      greeting: "测试",
+      aJoker: "测试",
     });
   assert.equal((await restored.modelContext(archive.id)).previous.length, 102);
   assert.equal(
-    (await new GreetingService(repo, undefined, undefined, undefined, { moderate: syntheticTextReview }).history(archive.id)).length,
+    (await new AJokerService(repo, undefined, undefined, undefined, { moderate: syntheticTextReview }).history(archive.id)).length,
     102,
   );
   const fresh = new ContextService(

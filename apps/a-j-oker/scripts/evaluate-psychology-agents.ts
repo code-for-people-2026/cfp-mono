@@ -13,11 +13,11 @@ process.env.HELLO_ADMIN_BOOTSTRAP = "false";
 process.env.PAYLOAD_SECRET ||= "isolated-evaluation-only-secret";
 const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
-const { GreetingService } = await import("../src/domain/greetings");
+const { AJokerService } = await import("../src/domain/a-j-oker");
 const payload = await cms();
 await (await import("../src/cms/seed")).seedAgents(payload);
 const repo = new Repository(payload, { id: randomUUID(), auth: "cookie" });
-const service = new GreetingService(repo);
+const service = new AJokerService(repo);
 const cases = [
   {
     name: "普通分享",
@@ -81,7 +81,7 @@ try {
   )) {
     const session = await service.createSession(`隔离架构评测：${sample.name}`);
     try {
-      const row = await service.generateGreeting({
+      const row = await service.generateAJoker({
         sessionId: session.id,
         requestId: randomUUID(),
         mode: "platform",
@@ -134,7 +134,7 @@ try {
                 : "会议把 12 说成 21，已经当场更正。",
           ]),
         );
-        const follow = await service.generateGreeting({
+        const follow = await service.generateAJoker({
           sessionId: session.id,
           requestId: randomUUID(),
           mode: "platform",
@@ -145,7 +145,7 @@ try {
         assert.equal(follow.status, "completed");
         assert.deepEqual(follow.input.formResponse?.values, values);
         formFollowup = {
-          greeting: follow.greeting,
+          aJoker: follow.aJoker,
           approach: follow.approach,
           artifacts: follow.artifacts,
           values,

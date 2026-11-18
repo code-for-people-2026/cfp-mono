@@ -13,11 +13,11 @@ process.env.PAYLOAD_SECRET = "image-regression-not-for-deployment";
 process.env.HELLO_ADMIN_BOOTSTRAP = "false";
 const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
-const { GreetingService } = await import("../src/domain/greetings");
+const { AJokerService } = await import("../src/domain/a-j-oker");
 const { MAX_STORED_IMAGE_BASE64_LENGTH } = await import("../src/domain/media-policy");
 const payload = await cms();
 // Storage regression uses an explicit synthetic allow decision.
-const service = new GreetingService(new Repository(payload, { id: randomUUID(), auth: "miniapp" }), undefined, undefined, async () => "allow");
+const service = new AJokerService(new Repository(payload, { id: randomUUID(), auth: "miniapp" }), undefined, undefined, async () => "allow");
 let failed = false;
 try {
   for (const width of [128, 256, 512]) {

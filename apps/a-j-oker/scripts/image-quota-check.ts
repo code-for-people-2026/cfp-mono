@@ -64,7 +64,7 @@ try {
       const service = new ImageGenerationService(repo, media, allowText, allowImage, () => provider);
       const turn = async (mode: Mode) => {
         const session = await repo.create("sessions", { title: "合成生图额度验证" });
-        return repo.create("greetings", { sessionId: session.id, requestKey: randomUUID(), fingerprint: "synthetic", status: "running", mode, input: { text: "制作休息提醒卡（合成配额测试）", mediaIds: [] } });
+        return repo.create("a-j-oker", { sessionId: session.id, requestKey: randomUUID(), fingerprint: "synthetic", status: "running", mode, input: { text: "制作休息提醒卡（合成配额测试）", mediaIds: [] } });
       };
       const generate = (id: number) => service.generate(id, input, AbortSignal.timeout(15_000), "synthetic-text-byok-never-sent");
       return { repo, media, service, turn, generate };
@@ -111,7 +111,7 @@ try {
         assert.equal(configuredRequests, 0);
         assert.equal(configuredSubmissions, 0);
         assert.deepEqual(await payload.db.drizzle.all(sql`SELECT day, reserved_calls FROM platform_model_quotas`), emptyLedger, "known configuration errors must consume neither task nor review budget");
-        assert.equal(readImageState(await configured.repo.get("greetings", configuredTurn.id)), undefined, "known configuration errors must not strand submitting state");
+        assert.equal(readImageState(await configured.repo.get("a-j-oker", configuredTurn.id)), undefined, "known configuration errors must not strand submitting state");
       }
       const previousReviewMode = process.env.HELLO_IMAGE_REVIEW_MODE, previousReviewToken = process.env.HELLO_IMAGE_REVIEW_TOKEN;
       Object.assign(process.env, { HELLO_IMAGE_REVIEW_MODE: "proxy", HELLO_IMAGE_REVIEW_TOKEN: "" });
@@ -122,7 +122,7 @@ try {
         await assert.rejects(missingPixelReview.generate(configuredTurn.id, input, AbortSignal.timeout(15_000)), { status: 503 });
         assert.equal(submitted, 0);
         assert.deepEqual(await payload.db.drizzle.all(sql`SELECT day, reserved_calls FROM platform_model_quotas`), emptyLedger);
-        assert.equal(readImageState(await configured.repo.get("greetings", configuredTurn.id)), undefined);
+        assert.equal(readImageState(await configured.repo.get("a-j-oker", configuredTurn.id)), undefined);
       } finally {
         if (previousReviewMode === undefined) delete process.env.HELLO_IMAGE_REVIEW_MODE; else process.env.HELLO_IMAGE_REVIEW_MODE = previousReviewMode;
         if (previousReviewToken === undefined) delete process.env.HELLO_IMAGE_REVIEW_TOKEN; else process.env.HELLO_IMAGE_REVIEW_TOKEN = previousReviewToken;
@@ -131,7 +131,7 @@ try {
       assert.equal(imageGenerationConfigured(), true);
       const recovered = await configuredService.generate(configuredTurn.id, input, AbortSignal.timeout(15_000));
       assert.ok(recovered.mediaId);
-      assert.equal(readImageState(await configured.repo.get("greetings", configuredTurn.id))?.status, "stored");
+      assert.equal(readImageState(await configured.repo.get("a-j-oker", configuredTurn.id))?.status, "stored");
       assert.deepEqual(configuredReviews, [{ stage: "input", purpose: "image_generation" }, { stage: "output", purpose: undefined }], "new image tasks review the original request and the generated description separately");
       assert.equal(configuredSubmissions, 1);
       assert.equal(configuredImageReviews, 1); assert.equal(configuredRequests, 3);
@@ -145,7 +145,7 @@ try {
         throw new ContentReviewError(422, "合成原请求复核拒绝");
       }, async () => { assert.fail("blocked original request must not reach pixel review"); });
       await assert.rejects(deniedRecovery.generate(configuredTurn.id, input, AbortSignal.timeout(15_000)), { status: 422 });
-      assert.equal(readImageState(await configured.repo.get("greetings", configuredTurn.id))?.status, "blocked", "stored images fail the intent gate even after provider credentials are removed");
+      assert.equal(readImageState(await configured.repo.get("a-j-oker", configuredTurn.id))?.status, "blocked", "stored images fail the intent gate even after provider credentials are removed");
       assert.equal(configuredRequests, 3); assert.equal(configuredSubmissions, 1);
     } finally {
       globalThis.fetch = originalFetch; process.env.DASHSCOPE_API_KEY = "";
@@ -162,7 +162,7 @@ try {
     const overOwner = await a.turn("byok");
     await assert.rejects(a.generate(overOwner.id), { status: 429 });
     assert.equal(submitted, 2, "BYOK and platform share one owner's budget across sessions");
-    assert.equal(readImageState(await a.repo.get("greetings", overOwner.id)), undefined, "quota refusal is not an uncertain submit");
+    assert.equal(readImageState(await a.repo.get("a-j-oker", overOwner.id)), undefined, "quota refusal is not an uncertain submit");
     const other = await b.turn("platform"); await b.generate(other.id);
     const beforeGlobalRejection = await ledger();
     const overGlobal = await c.turn("byok");

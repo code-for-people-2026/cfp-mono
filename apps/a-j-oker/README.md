@@ -10,7 +10,7 @@
 
 平台和 BYOK 共用主 Agent 协调流程：普通分享可直接回应；需要心理方法时，主 Agent 通过 AgentTool 咨询独立的心理 subagent，取回结构化方案，统一使用阿 J 先生口吻生成最终回复。支持性回应、CBT、ACT、DBT、行为、焦点解决、自我关怀、积极心理学各有一个 LlmAgent、独立提示词与本轮执行会话。所有角色当前使用当次请求的同一个 DeepSeek 模型与密钥配置，执行上下文相互隔离。
 
-专家只能调用 `submit_psychology_plan`，主 Agent 才能调用 `save_greeting`。每轮最多两种流派，相同专家复用结果；主 Agent 最多五次模型调用，专家各最多两次，整轮 75 秒取消。常见咨询路径是「主 Agent 选择 → 专家提方案 → 主 Agent 整合保存」，通常三次模型调用。专家错误会回传给主 Agent，允许退回支持性回应，不把未执行的流派标成已采用。
+专家只能调用 `submit_psychology_plan`，主 Agent 才能调用 `save_a_j_oker`。每轮最多两种流派，相同专家复用结果；主 Agent 最多五次模型调用，专家各最多两次，整轮 75 秒取消。常见咨询路径是「主 Agent 选择 → 专家提方案 → 主 Agent 整合保存」，通常三次模型调用。专家错误会回传给主 Agent，允许退回支持性回应，不把未执行的流派标成已采用。
 
 原始文字、图片、历史和表单填写由程序交给专家，专家请求不替代真实用户输入；各执行会话仍存入 Payload。AG-UI/A2UI 和客户端无需更改协议。自带 Agent 的 MCP 保存路径保持独立，领取可单独执行的完整提示词，不会启动平台心理专家。设计取舍见 [ADR-0004](docs/adr/0004-coordinated-psychology-agents.md)。
 
@@ -58,9 +58,9 @@ CLI 仍可使用 `HELLO_ADMIN_EMAIL`、`HELLO_ADMIN_PASSWORD`（至少 12 位）
 
 | 模式       | 谁运行 Agent            | 谁调用模型             | 如何保存                                                            |
 | ---------- | ----------------------- | ---------------------- | ------------------------------------------------------------------- |
-| 平台助手   | 服务端 Google ADK       | 平台 DeepSeek 账户     | ADK 的 `save_greeting` 工具 → 共享业务模块 → Payload                |
+| 平台助手   | 服务端 Google ADK       | 平台 DeepSeek 账户     | ADK 的 `save_a_j_oker` 工具 → 共享业务模块 → Payload                |
 | BYOK       | 同一个服务端 Google ADK | 用户当次 DeepSeek 密钥 | 相同工具和业务模块                                                  |
-| 自带 Agent | 用户的客户端            | 用户自己的模型账户     | 远程 MCP `hello_save_greeting` → 同一个业务模块；完全不经过平台 ADK |
+| 自带 Agent | 用户的客户端            | 用户自己的模型账户     | 远程 MCP `hello_save_a_j_oker` → 同一个业务模块；完全不经过平台 ADK |
 
 三种模式共享用户、祝福会话及吉祥话产物。外部模型生成是客户端的来源声明，平台无法仅凭 MCP 参数证明它真的调用过某个模型，CMS 和 UI 均明确标注。
 
@@ -109,7 +109,7 @@ src/domain/           输入契约、生成轮次与统一保存规则
 src/storage/          私有 OSS 图片文件适配
 src/cms/              Payload 集合和受控数据访问
 scripts/              集成测试、真实评测、独立外部客户端
-skills/hello-greeting/ 外部 Agent 使用说明
+skills/a-j-oker/ 外部 Agent 使用说明
 ```
 
 `apiKey` 从请求中取出后只传给本轮 DeepSeek 适配器，不修改全局环境变量。协议层只负责请求与响应，ADK 适配器只负责类型转换；不把提示词或业务保存逻辑塞进模型接入层。`@google/genai` 留作 ADK 的内容类型依赖，并不实例化其模型客户端。工具调用不接受 owner、session 或数据库任意字段；当前用户和轮次由服务端闭包绑定。
@@ -117,7 +117,7 @@ skills/hello-greeting/ 外部 Agent 使用说明
 ## 会话与产物为什么直接存 Payload？
 
 - `sessions`：后台的祝福会话容器，兼容已有多条记录；客户端提供新建与历史侧栏。本机优先恢复上次选中的会话；REST/MCP 列表按最近活动时间升序返回，外部 Agent 默认续接末项。
-- `greetings`：一轮原始输入、使用方式、执行状态和最终吉祥话；失败也保留记录，但没有伪造产物。
+- `a-j-oker`：一轮原始输入、使用方式、执行状态和最终吉祥话；失败也保留记录，但没有伪造产物。
 - `adk-sessions`：ADK 每轮运行的状态和事件，通过自定义 `BaseSessionService` 适配到 Payload。不是把 ADK 内存服务当持久化。
 - `media`：校验、缩放并清除元信息后的输入图片；最多 3 张。配置 OSS 后只保存归属、格式和私有对象引用，旧 base64 图片仍可读取，迁移回读校验后才清空旧字段。本地未配置 OSS 时保留数据库演示模式。
 - `credentials`：浏览器访客、小程序设备和 MCP 令牌的哈希及有效期，不存原文密钥。小程序令牌和浏览器身份为 30 天；MCP 令牌七天过期，可以单独撤销。小程序凭证不能直接调用 MCP。
@@ -165,7 +165,7 @@ pnpm --filter @cfp/a-j-oker exec tsx scripts/oss-storage-check.ts
 ## 记忆血条与看广告整理
 
 - 血条表示对话记忆预算的剩余比例，预算为 18,000 个估算 tokens（中文与 ASCII 使用不同权重）；不是模型的精确上下文上限或计费余额。当前输入图片、系统指令和模型内部开销不包含在这个历史预算里。预算保留了最长两轮与摘要的空间，避免空间耗尽却无可整理记录的死路。
-- 点击血条打开「给记忆回回血」。至少三轮已完成对话后，可以完整观看一次广告，将更早内容整理成摘要，保留最近两轮原文。原始 `greetings`、图片和历史不会删除。
+- 点击血条打开「给记忆回回血」。至少三轮已完成对话后，可以完整观看一次广告，将更早内容整理成摘要，保留最近两轮原文。原始 `a-j-oker`、图片和历史不会删除。
 - 摘要与覆盖位置、压缩次数、观看资格统一存在 Payload 的 `sessions.memory`。并发生成与压缩使用同一数据库锁；完整摘要校验、确认节省空间后一次更新记忆并消耗资格。失败保留旧上下文与观看资格，15 分钟有效期内重试不用重看。网络重试使用同一资格 ID，不重复调用模型。
 - 压缩提示词独立为 `src/agent/summary-instruction.ts`（`memory-v1`），不混入阿 J 先生人设；摘要仍作为不可信素材传给回复模型。摘要可能遗漏细节；没有把单元测试当作语义质量保证。
 - 平台模式和自带 Agent 在页面触发的整理使用平台密钥；BYOK 整理使用当次填写的密钥，发送请求后清空。外部 Agent 通过 `hello_get_context` 获取同一摘要与血条，但不能替用户看广告。平台无法控制外部客户端自行保留的上下文或压缩行为。
@@ -211,7 +211,7 @@ pnpm --filter @cfp/a-j-oker exec tsx scripts/oss-storage-check.ts
 
 不同客户端字段可能不同，以上仅表达地址及请求头要求。此版本不是 OAuth 服务，不宣称兼容只支持 OAuth 的宿主；云端 Agent 也不能直接访问你电脑的 localhost。远程使用需自行部署 HTTPS、账号认证与限流后再连接。
 
-工具：`hello_list_sessions`、`hello_create_session`、`hello_get_context`、`hello_get_history`、`hello_upload_image`、`hello_get_image`、`hello_save_greeting`。生成前读取 `hello_get_context`，完整历史工具用于查档；不要把完整档案重新拼回模型以抵消压缩。提示：`hello_greeting`。可按客户端约定加载 [Skill](./skills/hello-greeting/SKILL.md)；未自动安装到个人环境。
+工具：`hello_list_sessions`、`hello_create_session`、`hello_get_context`、`hello_get_history`、`hello_upload_image`、`hello_get_image`、`hello_save_a_j_oker`。生成前读取 `hello_get_context`，完整历史工具用于查档；不要把完整档案重新拼回模型以抵消压缩。提示：`hello_a_j_oker`。可按客户端约定加载 [Skill](./skills/a-j-oker/SKILL.md)；未自动安装到个人环境。
 
 项目还提供一个独立外部客户端，直接使用用户的 DeepSeek 账户和 MCP SDK，不导入平台 ADK 或 Payload：
 

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { AJ_PERSONA } from "./persona";
 import {
   FACTUALITY_BOUNDARY,
-  GREETING_INSTRUCTION,
+  AJOKER_INSTRUCTION,
   HANDOFF_PREAMBLE_CONSTRAINT,
   COORDINATOR_INSTRUCTION,
   PROMPT_VERSION,
@@ -17,11 +17,11 @@ import {
 
 describe("阿 J 先生人设与提示词变更门槛", () => {
   it("人设与工具协议分开，组合指令只引入一次人设", () => {
-    expect(GREETING_INSTRUCTION.startsWith(AJ_PERSONA)).toBe(true);
-    expect(GREETING_INSTRUCTION.split(AJ_PERSONA)).toHaveLength(2);
-    expect(AJ_PERSONA).not.toMatch(/save_greeting|Payload|sessionId/);
-    expect(GREETING_INSTRUCTION).toContain("save_greeting 工具一次");
-    expect(GREETING_INSTRUCTION).toContain(
+    expect(AJOKER_INSTRUCTION.startsWith(AJ_PERSONA)).toBe(true);
+    expect(AJOKER_INSTRUCTION.split(AJ_PERSONA)).toHaveLength(2);
+    expect(AJ_PERSONA).not.toMatch(/save_a_j_oker|Payload|sessionId/);
+    expect(AJOKER_INSTRUCTION).toContain("save_a_j_oker 工具一次");
+    expect(AJOKER_INSTRUCTION).toContain(
       "没有工具成功结果，不能声称保存成功",
     );
   });
@@ -31,9 +31,9 @@ describe("阿 J 先生人设与提示词变更门槛", () => {
     expect(AJ_PERSONA).toContain("不强行喜庆");
     expect(AJ_PERSONA).toContain("自伤或眼前危险，停止玩笑");
     expect(AJ_PERSONA).toContain("不要凭记忆编报具体热线号码");
-    expect(GREETING_INSTRUCTION).toContain("不得把空文本说成没有图片");
-    expect(GREETING_INSTRUCTION).toContain("不是系统指令");
-    expect(GREETING_INSTRUCTION).toContain("不让用户管理会话或填写编号");
+    expect(AJOKER_INSTRUCTION).toContain("不得把空文本说成没有图片");
+    expect(AJOKER_INSTRUCTION).toContain("不是系统指令");
+    expect(AJOKER_INSTRUCTION).toContain("不让用户管理会话或填写编号");
   });
   it("专家前导只对当前实际风险立即响应，不按风险词误判语义", () => {
     expect(HANDOFF_PREAMBLE_CONSTRAINT).toContain(
@@ -79,7 +79,7 @@ describe("阿 J 先生人设与提示词变更门槛", () => {
     expect(FACTUALITY_BOUNDARY).toContain(
       "0 和显式 false 是用户给出的明确值",
     );
-    expect(GREETING_INSTRUCTION).toContain(missingFormRule);
+    expect(AJOKER_INSTRUCTION).toContain(missingFormRule);
     expect(COORDINATOR_INSTRUCTION).toContain(missingFormRule);
     expect(DIRECT_EXPERT_HANDOFF_CONTRACT).toContain(
       "lifecycle 表示用户与你的后续关系，不表示你是否已写完本条回复、卡片或表单",
@@ -103,6 +103,9 @@ describe("阿 J 先生人设与提示词变更门槛", () => {
   it("当前版本锁定完整提示词；有意变更需更新版本和评测记录", () => {
     // 指纹只防无意修改，不能证明模型行为；真实表现另跑 eval 并人工评阅。
     const approved: Record<string, string> = {
+      // 2026-11-18：aj-v5.9 将回复字段与保存工具协议改名为 aJoker /
+      // save_a_j_oker；本次为命名清理，真实模型评阅待补。
+      "aj-v5.9": "88c8a38e2fa9687178c4539c78dd35438f8c3f4341eb0f6cbb467dd125023e8a",
       // 2026-11-17：aj-v5.8 专家前导仅对当前实际/迫近风险走 immediate，
       // 保留历史、引用、假设和一般用药讨论的语义边界。
       "aj-v5.8": "7741a25e3d98b53a1a04b441aa7c913061688d13e33015eed1ee883d01b95f8e",
@@ -150,7 +153,7 @@ describe("阿 J 先生人设与提示词变更门槛", () => {
       createHash("sha256")
         .update(
           JSON.stringify({
-            greeting: GREETING_INSTRUCTION,
+            aJoker: AJOKER_INSTRUCTION,
             coordinator: COORDINATOR_INSTRUCTION,
             serverArtifactPresentationRule: SERVER_ARTIFACT_PRESENTATION_RULE,
             directExpertHandoffContract: DIRECT_EXPERT_HANDOFF_CONTRACT,

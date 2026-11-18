@@ -126,7 +126,7 @@ describe("AJ 表单引用", () => {
       input,
       status: "completed",
       mode: "platform",
-      greeting: "已接着回应",
+      aJoker: "已接着回应",
       createdAt: "2026-11-13",
     };
     mocks.request.mockImplementation(async ({ url }) => ({

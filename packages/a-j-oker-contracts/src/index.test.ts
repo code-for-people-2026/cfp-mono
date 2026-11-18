@@ -15,7 +15,7 @@ const turn = {
   input: { text: "今天开工", mediaIds: [] },
   status: "completed",
   mode: "platform",
-  greeting: "开工顺利",
+  aJoker: "开工顺利",
   model: null,
   createdAt: "2026-10-03T00:00:00Z",
 };

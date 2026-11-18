@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FunctionTool, type LlmRequest } from "@google/adk";
 import { FunctionCallingConfigMode } from "@google/genai";
-import { greetingSchema } from "../domain/contracts";
+import { aJokerSchema } from "../domain/contracts";
 import { DeepSeekError, completeDeepSeek } from "../models/deepseek";
 import { DeepSeekModel, toDeepSeekRequest } from "./deepseek-model";
 
 const save = new FunctionTool({
-  name: "save_greeting",
+  name: "save_a_j_oker",
   description: "保存吉祥话",
-  parameters: greetingSchema,
+  parameters: aJokerSchema,
   execute: async () => ({ saved: true }),
 });
 function request(): LlmRequest {
@@ -22,7 +22,7 @@ function request(): LlmRequest {
         ],
       },
     ],
-    toolsDict: { save_greeting: save },
+    toolsDict: { save_a_j_oker: save },
     liveConnectConfig: {},
     config: {
       systemInstruction: "独立指令",
@@ -30,16 +30,16 @@ function request(): LlmRequest {
       toolConfig: {
         functionCallingConfig: {
           mode: FunctionCallingConfigMode.ANY,
-          allowedFunctionNames: ["save_greeting"],
+          allowedFunctionNames: ["save_a_j_oker"],
         },
       },
     },
   };
 }
 function completion(
-  name = "save_greeting",
+  name = "save_a_j_oker",
   args = JSON.stringify({
-    greeting: "花开有时，愿你心中有光。",
+    aJoker: "花开有时，愿你心中有光。",
     association: "从小花联想到成长。",
   }),
   finish = "tool_calls",
@@ -81,13 +81,13 @@ describe("DeepSeek 协议适配", () => {
     expect(input.tools[0].function.parameters).toMatchObject({
       type: "object",
       properties: {
-        greeting: { type: "string", minLength: 2, maxLength: 1000 },
+        aJoker: { type: "string", minLength: 2, maxLength: 1000 },
         association: { type: "string", minLength: 1, maxLength: 500 },
       },
     });
     expect(input.tool_choice).toEqual({
       type: "function",
-      function: { name: "save_greeting" },
+      function: { name: "save_a_j_oker" },
     });
     const schema = JSON.stringify(input.tools[0].function.parameters);
     expect(schema).toContain('"exclusiveMinimum":0');
@@ -102,8 +102,8 @@ describe("DeepSeek 协议适配", () => {
         {
           functionCall: {
             id: "call-1",
-            name: "save_greeting",
-            args: { greeting: "祝福" },
+            name: "save_a_j_oker",
+            args: { aJoker: "祝福" },
           },
         },
       ],
@@ -114,7 +114,7 @@ describe("DeepSeek 协议适配", () => {
         {
           functionResponse: {
             id: "call-1",
-            name: "save_greeting",
+            name: "save_a_j_oker",
             response: { saved: true },
           },
         },
@@ -151,7 +151,7 @@ describe("DeepSeek 协议适配", () => {
     });
     expect(result.value).toMatchObject({
       content: {
-        parts: [{ functionCall: { id: "call-1", name: "save_greeting" } }],
+        parts: [{ functionCall: { id: "call-1", name: "save_a_j_oker" } }],
       },
       usageMetadata: { totalTokenCount: 30 },
     });
@@ -160,8 +160,8 @@ describe("DeepSeek 协议适配", () => {
 
   it.each([
     ["未知工具", completion("delete_everything")],
-    ["非法参数", completion("save_greeting", "not-json-with-secret")],
-    ["被截断", completion("save_greeting", "{}", "length")],
+    ["非法参数", completion("save_a_j_oker", "not-json-with-secret")],
+    ["被截断", completion("save_a_j_oker", "{}", "length")],
   ])("拒绝%s，错误不泄露原始内容", async (_, response) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(response)));
     await expect(
@@ -256,7 +256,7 @@ describe("DeepSeek 协议适配", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(fetch.mock.calls[0]?.[1]?.body).toBe(fetch.mock.calls[1]?.[1]?.body);
     expect(result.value).toMatchObject({
-      content: { parts: [{ functionCall: { name: "save_greeting" } }] },
+      content: { parts: [{ functionCall: { name: "save_a_j_oker" } }] },
     });
   });
 
@@ -292,7 +292,7 @@ describe("DeepSeek 协议适配", () => {
       expect(fetch).toHaveBeenCalledTimes(2);
       expect(fetch.mock.calls[0]?.[1]?.body).toBe(fetch.mock.calls[1]?.[1]?.body);
       expect(result.value).toMatchObject({
-        content: { parts: [{ functionCall: { id: "call-1", name: "save_greeting" } }] },
+        content: { parts: [{ functionCall: { id: "call-1", name: "save_a_j_oker" } }] },
       });
     },
   );
@@ -358,9 +358,9 @@ describe("DeepSeek 协议适配", () => {
         parts: [{
           functionCall: {
             id: "call-1",
-            name: "save_greeting",
+            name: "save_a_j_oker",
             args: {
-              greeting: "花开有时，愿你心中有光。",
+              aJoker: "花开有时，愿你心中有光。",
               association: "从小花联想到成长。",
             },
           },

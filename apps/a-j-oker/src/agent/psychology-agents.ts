@@ -12,7 +12,7 @@ import {
   type RunAsyncToolRequest,
 } from "@google/adk";
 import { FunctionCallingConfigMode, Type, type Part } from "@google/genai";
-import { AppError, type GenerationProgress, type Greeting } from "../domain/contracts";
+import { AppError, type GenerationProgress, type AJoker } from "../domain/contracts";
 export { SPECIALIST_INSTRUCTIONS } from "./default-prompts";
 import { PSYCHOLOGY_SAFETY, type PsychologyApproach } from "./psychology";
 
@@ -88,7 +88,7 @@ export function createPsychologyTeam(options: {
     plan: PsychologyPlan;
     specialist: SpecialistDefinition;
   }) => Promise<unknown>;
-  checkDelivery?: (reply: Greeting) => string | undefined;
+  checkDelivery?: (reply: AJoker) => string | undefined;
   responseGuidance?: string;
   localFaults?: {
     rejectFirstTwoExpertSubmissions?: boolean;
@@ -427,7 +427,7 @@ export function createPsychologyTeam(options: {
       finished = true;
       return { status: "completed" as const, plan };
     },
-    checkReply(reply: Greeting): string | undefined {
+    checkReply(reply: AJoker): string | undefined {
       if (finished) return "专家已经直接完成本轮回复，阿 J 不得改写或重复保存。";
       if (active)
         return "专家仍在处理，请等工具结果返回后再保存，不要同时咨询和保存。";
@@ -445,19 +445,19 @@ export function createPsychologyTeam(options: {
       )
         return "专家提示需要立即安全关照：请使用 supportive，直接回应，不布置表单或其他作品。";
     },
-    prepareUnavailableFallbackReply(reply: Greeting): Greeting {
+    prepareUnavailableFallbackReply(reply: AJoker): AJoker {
       const notice = expertUnavailableNotice;
       if (!notice) return reply;
       if (urgentFallback) return reply;
-      if (reply.greeting.includes(notice.fact)) return reply;
+      if (reply.aJoker.includes(notice.fact)) return reply;
       const noticeText = notice.fallback;
       const separator = "\n";
-      const original = reply.greeting;
+      const original = reply.aJoker;
       const budget = 1000 - noticeText.length - separator.length;
-      const greeting = original.length <= budget
+      const aJoker = original.length <= budget
         ? `${noticeText}${separator}${original}`
         : `${noticeText}${separator}${original.slice(0, Math.max(0, budget))}`;
-      return { ...reply, greeting };
+      return { ...reply, aJoker };
     },
     finish() {
       finished = true;

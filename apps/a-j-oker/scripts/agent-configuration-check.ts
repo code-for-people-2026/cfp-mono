@@ -17,8 +17,8 @@ const { loadAgentConfiguration } = await import("../src/agent/configuration");
 const { readTurnKnowledge } = await import("../src/agent/knowledge-evidence");
 const { decryptKnowledgeSecret } = await import("../src/cms/secret");
 const { Repository } = await import("../src/cms/repository");
-const { GreetingService } = await import("../src/domain/greetings");
-const { runGreeting } = await import("../src/agent/runtime");
+const { AJokerService } = await import("../src/domain/a-j-oker");
+const { runAJoker } = await import("../src/agent/runtime");
 
 class ConfigurationModel extends BaseLlm {
   requests: LlmRequest[] = [];
@@ -47,7 +47,7 @@ class ConfigurationModel extends BaseLlm {
                   usedSourceIds: ["ref_1"],
                   lifecycle: "continue",
                   reply: {
-                    greeting: "我会从认知行为的角度陪你整理：先只记录已经发生的事实。",
+                    aJoker: "我会从认知行为的角度陪你整理：先只记录已经发生的事实。",
                     association: "认知行为方法：区分事实、猜测与证据。",
                     approach: "cbt",
                   },
@@ -297,12 +297,12 @@ try {
   try {
     const model = new ConfigurationModel();
     const repo = new Repository(payload, { id: randomUUID(), auth: "cookie" });
-    const service = new GreetingService(repo, (request) =>
-      runGreeting(request, model), undefined, undefined, { moderate: syntheticTextReview }
+    const service = new AJokerService(repo, (request) =>
+      runAJoker(request, model), undefined, undefined, { moderate: syntheticTextReview }
     );
     const session = await service.createSession("配置集成检查");
     process.env.DEEPSEEK_API_KEY = "fixture-platform-key";
-    const row = await service.generateGreeting({
+    const row = await service.generateAJoker({
       sessionId: session.id,
       requestId: randomUUID(),
       mode: "platform",
@@ -310,7 +310,7 @@ try {
     });
     assert.equal(row.status, "completed");
     assert.equal(
-      row.greeting,
+      row.aJoker,
       "我会从认知行为的角度陪你整理：先只记录已经发生的事实。",
       "专家回复应直接交付，不再由协调者改写",
     );
@@ -402,9 +402,9 @@ try {
         context: { helloKnowledgeSecrets: true },
       })
     ).docs,
-    greetings: (
+    aJokerTurns: (
       await payload.find({
-        collection: "greetings",
+        collection: "a-j-oker",
         pagination: false,
         depth: 0,
       })
@@ -424,7 +424,7 @@ try {
   });
   const afterRename = await snapshot();
   assert.deepEqual(afterRename.libraries, beforeRename.libraries);
-  assert.deepEqual(afterRename.greetings, beforeRename.greetings);
+  assert.deepEqual(afterRename.aJokerTurns, beforeRename.aJokerTurns);
   assert.deepEqual(afterRename.sessions, beforeRename.sessions);
   for (const previous of beforeRename.agents) {
     const current = afterRename.agents.find(

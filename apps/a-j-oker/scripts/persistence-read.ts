@@ -15,10 +15,10 @@ try {
     (await repo.get("sessions", Number(sessionId))).title,
     "集成测试",
   );
-  const greeting = await repo.get("greetings", Number(turnId));
-  assert.equal(greeting.status, "completed");
+  const aJoker = await repo.get("a-j-oker", Number(turnId));
+  assert.equal(aJoker.status, "completed");
   assert.ok(
-    typeof greeting.greeting === "string" && greeting.greeting.length > 0,
+    typeof aJoker.aJoker === "string" && aJoker.aJoker.length > 0,
   );
   assert.equal(
     (await repo.get("media", Number(mediaId))).mimeType,

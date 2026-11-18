@@ -62,9 +62,9 @@ try {
   console.log("PASS real upload review, private storage, owner-only image access");
   for (const mode of ["platform", "byok"] as const) {
     stage = `${mode}-vision`;
-    const turn = turnResultSchema.parse(await post("greet", { sessionId: session.id, requestId: randomUUID(), mode, ...(mode === "byok" ? { apiKey: process.env.DEEPSEEK_API_KEY } : {}), input: { text: "请先准确描述我上传图片左边和右边的形状与颜色，再读出图片里的四位数字。请简短回答。", mediaIds: [media.id] } }));
+    const turn = turnResultSchema.parse(await post("a-j-oker", { sessionId: session.id, requestId: randomUUID(), mode, ...(mode === "byok" ? { apiKey: process.env.DEEPSEEK_API_KEY } : {}), input: { text: "请先准确描述我上传图片左边和右边的形状与颜色，再读出图片里的四位数字。请简短回答。", mediaIds: [media.id] } }));
     assert.equal(turn.status, "completed");
-    for (const expected of [/红/, /圆/, /蓝/, /方/, /4827/]) assert.match(turn.greeting || "", expected);
+    for (const expected of [/红/, /圆/, /蓝/, /方/, /4827/]) assert.match(turn.aJoker || "", expected);
     console.log(`PASS real ${mode} vision: red circle, blue square, 4827`);
   }
   stage = "history-export";
@@ -74,7 +74,7 @@ try {
   const exported = await fetch(`${origin}/api/hello/privacy/export`, { headers });
   const exportData = await exported.json();
   assert.equal(exported.status, 200, exportData.error || "图片与对话应能导出");
-  assert.equal(exportData.records.greetings.length, 2);
+  assert.equal(exportData.records["a-j-oker"].length, 2);
   assert.equal(exportData.media.length, 1);
   assert.ok(exportData.media[0].base64);
   stage = "fixture-cleanup";

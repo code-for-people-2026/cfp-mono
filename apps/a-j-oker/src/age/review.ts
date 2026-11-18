@@ -52,7 +52,7 @@ async function conversationEvidence(payload: Payload, owner: string, source: Age
   // inspectInput runs while the owner-scoped session lease is held and before
   // the triggering row is created. Therefore every completed row visible now
   // is an antecedent; a later message cannot enter this snapshot concurrently.
-  const result = await payload.find({ collection: "greetings", overrideAccess: true, req, limit: EVIDENCE_PRIOR_TURN_LIMIT, sort: "-id", where: {
+  const result = await payload.find({ collection: "a-j-oker", overrideAccess: true, req, limit: EVIDENCE_PRIOR_TURN_LIMIT, sort: "-id", where: {
     and: [
       { owner: { equals: owner } },
       { sessionId: { equals: source.sessionId } },
@@ -67,7 +67,7 @@ async function conversationEvidence(payload: Payload, owner: string, source: Age
     const parsed = inputSchema.safeParse(row.input);
     const source = { id: row.id, createdAt: row.createdAt };
     if (parsed.success && parsed.data.text) prior.push(boundedMessage("user", parsed.data.text, false, source));
-    if (row.greeting) prior.push(boundedMessage("assistant", String(row.greeting), false, source));
+    if (row.aJoker) prior.push(boundedMessage("assistant", String(row.aJoker), false, source));
   }
   const trigger = boundedMessage("user", source.triggerText, true);
   return {

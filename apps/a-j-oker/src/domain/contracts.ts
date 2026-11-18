@@ -1,11 +1,11 @@
 export {
   inputSchema,
   turnSchema,
-  greetingSchema,
+  aJokerSchema,
   handoffPreambleSchema,
   externalSchema,
   type Inspiration,
-  type Greeting,
+  type AJoker,
   type Mode,
 } from "@cfp/a-j-oker-contracts";
 import type { RunInterimMessage } from "@cfp/base-chat-protocol";

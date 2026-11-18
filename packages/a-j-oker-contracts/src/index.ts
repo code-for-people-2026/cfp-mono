@@ -51,7 +51,7 @@ export const turnSchema = z.object({
   mode: z.enum(["platform", "byok"]),
   apiKey: z.string().min(10).max(256).optional(),
 });
-export const greetingSchema = replySchema;
+export const aJokerSchema = replySchema;
 export const handoffPreambleSchema = z
   .string()
   .trim()
@@ -61,7 +61,7 @@ export const externalSchema = z.object({
   sessionId: z.number().int().positive(),
   requestId: z.string().uuid(),
   input: inputSchema,
-  output: greetingSchema,
+  output: aJokerSchema,
   model: z.string().trim().min(1).max(100),
 });
 export const sessionSchema = z.object({
@@ -78,7 +78,7 @@ export const turnResultSchema = z.object({
   visibility: z.literal("quarantined").optional(),
   imageGeneration: z.object({ status: z.enum(["submitting", "pending", "stored", "failed", "blocked"]), canResume: z.boolean() }).nullish(),
   mode: modeSchema,
-  greeting: z.string().nullish(),
+  aJoker: z.string().nullish(),
   handoffPreamble: handoffPreambleSchema.nullish(),
   error: z.string().nullish(),
   association: z.string().nullish(),
@@ -144,7 +144,7 @@ export const memoryStatusSchema = z.object({
 });
 export const modelContextSchema = z.object({
   memory: z.string(),
-  previous: z.array(z.object({ input: inputSchema, greeting: z.string() })),
+  previous: z.array(z.object({ input: inputSchema, aJoker: z.string() })),
 });
 export const agentContextSchema = z.object({
   context: modelContextSchema,
@@ -170,7 +170,7 @@ export const errorSchema = z.object({
 });
 
 export type Inspiration = z.output<typeof inputSchema>;
-export type Greeting = z.output<typeof greetingSchema>;
+export type AJoker = z.output<typeof aJokerSchema>;
 export type Mode = z.output<typeof modeSchema>;
 export type Session = z.output<typeof sessionSchema>;
 export type Turn = z.output<typeof turnResultSchema>;

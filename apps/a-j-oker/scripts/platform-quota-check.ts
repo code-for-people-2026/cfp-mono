@@ -14,7 +14,7 @@ import {
 } from "@payloadcms/db-sqlite";
 import type { LlmRequest, LlmResponse } from "@google/adk";
 import { ScriptedModel } from "./scripted-model";
-import { GREETING_MAX_CALLS } from "../src/agent/limits";
+import { AJOKER_MAX_CALLS } from "../src/agent/limits";
 
 const worker = process.argv[2] === "--worker";
 const dir = worker
@@ -42,9 +42,9 @@ const { cms } = await import("../src/cms/client");
 const { reservePlatformCalls } = await import("../src/cms/platform-quota");
 const { migrations } = await import("../src/cms/migrations");
 const { Repository } = await import("../src/cms/repository");
-const { GreetingService } = await import("../src/domain/greetings");
+const { AJokerService } = await import("../src/domain/a-j-oker");
 const { ContextService } = await import("../src/domain/context");
-const { runGreeting } = await import("../src/agent/runtime");
+const { runAJoker } = await import("../src/agent/runtime");
 const { GET: readiness } = await import("../src/app/api/ready/route");
 const payload = await cms();
 const db = payload.db.drizzle;
@@ -80,7 +80,7 @@ try {
     let accepted = 0;
     for (let i = 0; i < Number(process.argv[4]); i++) {
       try {
-        await reservePlatformCalls(payload, GREETING_MAX_CALLS);
+        await reservePlatformCalls(payload, AJOKER_MAX_CALLS);
         accepted++;
       } catch (error) {
         if (!(error instanceof Error && "status" in error)) throw error;
@@ -106,14 +106,14 @@ try {
       oldSession,
     );
     await (await import("../src/cms/seed")).seedAgents(payload);
-    const twoGreetingsBudget = GREETING_MAX_CALLS * 2;
-    const compactionBudget = twoGreetingsBudget + 1;
+    const twoAJokersBudget = AJOKER_MAX_CALLS * 2;
+    const compactionBudget = twoAJokersBudget + 1;
     const defaultProbeBudget = compactionBudget + 1;
     const busyRetryBudget = defaultProbeBudget + 1;
     const concurrentRunCount = 4;
-    const concurrentBudget = GREETING_MAX_CALLS * concurrentRunCount;
+    const concurrentBudget = AJOKER_MAX_CALLS * concurrentRunCount;
     const concurrentAttemptsPerWorker = concurrentRunCount + 1;
-    process.env.HELLO_PLATFORM_DAILY_CALL_LIMIT = String(twoGreetingsBudget);
+    process.env.HELLO_PLATFORM_DAILY_CALL_LIMIT = String(twoAJokersBudget);
     delete process.env.HELLO_PRIVACY_CONTACT;
     assert.equal((await readiness()).status, 503, "missing privacy configuration must block readiness");
     process.env.HELLO_PRIVACY_CONTACT = "quota-test@example.invalid";
@@ -137,37 +137,37 @@ try {
         input: LlmRequest,
       ): AsyncGenerator<LlmResponse> {
         // Includes coordinator and expert-direct-reply calls before model work.
-        assert.equal(await used(), GREETING_MAX_CALLS);
+        assert.equal(await used(), AJOKER_MAX_CALLS);
         yield* super.generateContentAsync(input);
       }
     }
     const model = new ObservedModel({
-      greeting: "先区分事实与猜测。",
+      aJoker: "先区分事实与猜测。",
       association: "测试",
       approach: "cbt",
     });
     const firstRepo = makeRepo();
-    const service = new GreetingService(firstRepo, (args) =>
-      runGreeting(args, model), undefined, undefined, { moderate: syntheticTextReview }
+    const service = new AJokerService(firstRepo, (args) =>
+      runAJoker(args, model), undefined, undefined, { moderate: syntheticTextReview }
     );
     const session = await service.createSession();
     const first = request(session.id);
-    const greeting = await service.generateGreeting(first);
+    const aJoker = await service.generateAJoker(first);
     assert.equal(model.requests.length, 2);
-    assert.equal((await service.generateGreeting(first)).id, greeting.id);
+    assert.equal((await service.generateAJoker(first)).id, aJoker.id);
     assert.equal(model.requests.length, 2);
-    assert.equal(await used(), GREETING_MAX_CALLS);
+    assert.equal(await used(), AJOKER_MAX_CALLS);
 
-    const failing = new GreetingService(makeRepo(), async () => {
+    const failing = new AJokerService(makeRepo(), async () => {
       throw new Error("provider timeout");
     }, undefined, undefined, { moderate: syntheticTextReview });
     await assert.rejects(
-      failing.generateGreeting(request((await failing.createSession()).id)),
+      failing.generateAJoker(request((await failing.createSession()).id)),
       { status: 502 },
     );
     assert.equal(
       await used(),
-      twoGreetingsBudget,
+      twoAJokersBudget,
       "failures must not refund possibly billed work",
     );
     assert.equal(
@@ -175,13 +175,13 @@ try {
       200,
       "exhaustion is not a deployment failure",
     );
-    assert.equal(await used(), twoGreetingsBudget);
+    assert.equal(await used(), twoAJokersBudget);
     const byokModel = new ScriptedModel();
-    const third = new GreetingService(makeRepo(), (args) =>
-      runGreeting(args, byokModel), undefined, undefined, { moderate: syntheticTextReview }
+    const third = new AJokerService(makeRepo(), (args) =>
+      runAJoker(args, byokModel), undefined, undefined, { moderate: syntheticTextReview }
     );
     const thirdSession = await third.createSession();
-    await assert.rejects(third.generateGreeting(request(thirdSession.id)), {
+    await assert.rejects(third.generateAJoker(request(thirdSession.id)), {
       status: 429,
     });
     assert.equal(
@@ -189,7 +189,7 @@ try {
       0,
       "fresh identity must be stopped before generation",
     );
-    await third.generateGreeting({
+    await third.generateAJoker({
       ...request(thirdSession.id),
       mode: "byok",
       apiKey: "private-test-only",
@@ -200,7 +200,7 @@ try {
         ...request(session.id),
         input: { text: "历史资料。".repeat(100) },
         output: {
-          greeting: "保存的外部回复。".repeat(30),
+          aJoker: "保存的外部回复。".repeat(30),
           association: "测试",
         },
         model: "external-test-only",
@@ -209,7 +209,7 @@ try {
     await external();
     assert.equal(
       await used(),
-      twoGreetingsBudget,
+      twoAJokersBudget,
       "BYOK and external artifacts do not use platform quota",
     );
 
@@ -231,7 +231,7 @@ try {
     assert.equal(
       await used(),
       compactionBudget,
-      "compaction and greeting share quota; retry is free",
+      "compaction and aJoker share quota; retry is free",
     );
     await external();
     process.env.HELLO_PLATFORM_DAILY_CALL_LIMIT = "0";
@@ -379,7 +379,7 @@ try {
       503,
       "missing ledger must make readiness fail",
     );
-    await assert.rejects(third.generateGreeting(request(thirdSession.id)), {
+    await assert.rejects(third.generateAJoker(request(thirdSession.id)), {
       status: 503,
     });
     assert.equal(

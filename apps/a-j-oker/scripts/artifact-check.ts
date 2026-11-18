@@ -28,8 +28,8 @@ process.env.PAYLOAD_SECRET = "artifact-check-only-secret";
 process.env.DEEPSEEK_API_KEY = "artifact-check-only-key";
 const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
-const { GreetingService } = await import("../src/domain/greetings");
-const { runGreeting } = await import("../src/agent/runtime");
+const { AJokerService } = await import("../src/domain/a-j-oker");
+const { runAJoker } = await import("../src/agent/runtime");
 const { readAgentInput, agentStream } = await import("../src/server/ag-ui");
 const { mintCredential, COOKIE } = await import("../src/server/auth");
 const { GET } = await import("../src/app/api/hello/[...path]/route");
@@ -71,7 +71,7 @@ const oldTurnResultSchema = z.object({
     })
     .nullish(),
   mode: z.enum(["platform", "byok", "external"]),
-  greeting: z.string().nullish(),
+  aJoker: z.string().nullish(),
   error: z.string().nullish(),
   association: z.string().nullish(),
   approach: z.string().nullish(),
@@ -97,13 +97,13 @@ try {
   // A single structured form exercises text artifacts; real image delivery is covered by image-generation-check.
   const textArtifacts = artifacts.filter((artifact) => artifact.kind === "form");
   const model = new ScriptedModel({
-    greeting: "且把眼前的小事理清楚。",
+    aJoker: "且把眼前的小事理清楚。",
     association: "回应作品链路验收",
     approach: "cbt",
     artifacts: textArtifacts,
   });
-  const service = new GreetingService(repo, (request) =>
-    runGreeting(request, model),
+  const service = new AJokerService(repo, (request) =>
+    runAJoker(request, model),
     undefined, undefined, syntheticReviews,
   );
   const session = await service.createSession("回应作品测试");
@@ -113,10 +113,10 @@ try {
     mode: "platform",
     input: { text: "制作休息提醒卡，只生成文本，并提供情绪练习" },
   };
-  const saved = await service.generateGreeting(input);
+  const saved = await service.generateAJoker(input);
   assert.deepEqual(saved.artifacts, textArtifacts);
   assert.deepEqual((await service.history(session.id))[0].artifacts, textArtifacts);
-  assert.equal((await service.generateGreeting(input)).id, saved.id);
+  assert.equal((await service.generateAJoker(input)).id, saved.id);
   assert.equal(
     model.requests.length,
     2,
@@ -142,14 +142,14 @@ try {
   );
   assert.ok(
     !specialistSession.snapshot.events.some(
-      (event) => event.author === "greeting_agent",
+      (event) => event.author === "a_j_oker_agent",
     ),
   );
 
   await assert.rejects(
     () =>
       service.complete(saved.id, {
-        greeting: String(saved.greeting),
+        aJoker: String(saved.aJoker),
         association: String(saved.association),
         artifacts: [],
       }),
@@ -185,7 +185,7 @@ try {
         }
       : artifact,
   );
-  await repo.update("greetings", saved.id, {
+  await repo.update("a-j-oker", saved.id, {
     artifacts: legacyMixedArtifacts,
   });
   const replayedForm = (await service.history(session.id))[0].artifacts?.find(
@@ -260,12 +260,12 @@ try {
       "客户端不能伪造字段说明",
     ),
   );
-  assert.equal((await service.generateGreeting(args)).id, history[1].id);
+  assert.equal((await service.generateAJoker(args)).id, history[1].id);
   assert.equal(model.requests.length, 3);
   const otherSession = await service.createSession("另一个会话");
   await assert.rejects(
     () =>
-      service.generateGreeting({
+      service.generateAJoker({
         ...args,
         requestId: randomUUID(),
         input: {
@@ -284,7 +284,7 @@ try {
   );
   await assert.rejects(
     () =>
-      service.generateGreeting({
+      service.generateAJoker({
         ...args,
         sessionId: otherSession.id,
         requestId: randomUUID(),
@@ -293,7 +293,7 @@ try {
   );
   await assert.rejects(
     () =>
-      service.generateGreeting({
+      service.generateAJoker({
         ...args,
         requestId: randomUUID(),
         input: {
@@ -308,7 +308,7 @@ try {
   );
   await assert.rejects(
     () =>
-      service.generateGreeting({
+      service.generateAJoker({
         ...args,
         requestId: randomUUID(),
         input: {
@@ -355,19 +355,19 @@ try {
     ],
   };
   const choiceModel = new ScriptedModel({
-    greeting: "这些选择已经保留原样。",
+    aJoker: "这些选择已经保留原样。",
     association: "结构化答案回归",
     approach: "cbt",
     artifacts: [choiceForm],
   });
-  const choiceService = new GreetingService(
+  const choiceService = new AJokerService(
     repo,
-    (request) => runGreeting(request, choiceModel),
+    (request) => runAJoker(request, choiceModel),
     undefined,
     undefined,
     syntheticReviews,
   );
-  const choiceSource = await choiceService.generateGreeting({
+  const choiceSource = await choiceService.generateAJoker({
     sessionId: session.id,
     requestId: randomUUID(),
     mode: "platform",
@@ -379,7 +379,7 @@ try {
   };
   await assert.rejects(
     () =>
-      choiceService.generateGreeting({
+      choiceService.generateAJoker({
         sessionId: session.id,
         requestId: randomUUID(),
         mode: "platform",
@@ -399,7 +399,7 @@ try {
   );
   await assert.rejects(
     () =>
-      choiceService.generateGreeting({
+      choiceService.generateAJoker({
         sessionId: session.id,
         requestId: randomUUID(),
         mode: "platform",
@@ -414,7 +414,7 @@ try {
       }),
     /未知答案/,
   );
-  const structured = await choiceService.generateGreeting({
+  const structured = await choiceService.generateAJoker({
     sessionId: session.id,
     requestId: randomUUID(),
     mode: "platform",
@@ -438,13 +438,13 @@ try {
   for (const expected of ["有点累", "朋友", "散步", "写日记"])
     assert.ok(modelInput.includes(expected), `后端应保留标签：${expected}`);
   assert.ok(!modelInput.includes("[object Object]"));
-  const stranger = new GreetingService(
+  const stranger = new AJokerService(
     new Repository(payload, { id: randomUUID(), auth: "cookie" }),
   );
   const strangerSession = await stranger.createSession("其他访客");
   await assert.rejects(
     () =>
-      stranger.generateGreeting({
+      stranger.generateAJoker({
         ...args,
         requestId: randomUUID(),
         sessionId: strangerSession.id,
@@ -458,7 +458,7 @@ try {
     input: { text: "制作休息提醒卡（历史外部协议兼容测试）" },
     model: "test-client",
     output: {
-      greeting: "外部生成的作品。",
+      aJoker: "外部生成的作品。",
       association: "外部声明",
       artifacts: textArtifacts,
     },
@@ -471,7 +471,7 @@ try {
     input: { text: "保存新版展示能力" },
     model: "test-client-v2",
     output: {
-      greeting: "新版作品已保存。",
+      aJoker: "新版作品已保存。",
       association: "传输兼容",
       artifacts: [choiceForm],
     },
@@ -485,7 +485,7 @@ try {
         input: { text: "制作休息提醒卡，不可引用不存在的图片" },
         model: "test-client",
         output: {
-          greeting: "图片作品测试。",
+          aJoker: "图片作品测试。",
           association: "验收",
           artifacts: [
             {
@@ -506,7 +506,7 @@ try {
   );
   const repairedModel = new ScriptedModel([
     {
-      greeting: "格式需要修正。",
+      aJoker: "格式需要修正。",
       association: "验收",
       artifacts: [
         {
@@ -518,13 +518,13 @@ try {
         },
       ],
     },
-    { greeting: "现在修好了。", association: "格式修复验收", artifacts: textArtifacts },
+    { aJoker: "现在修好了。", association: "格式修复验收", artifacts: textArtifacts },
   ]);
-  const repairedService = new GreetingService(repo, (request) =>
-    runGreeting(request, repairedModel),
+  const repairedService = new AJokerService(repo, (request) =>
+    runAJoker(request, repairedModel),
     undefined, undefined, syntheticReviews,
   );
-  const repaired = await repairedService.generateGreeting({
+  const repaired = await repairedService.generateAJoker({
     ...input,
     sessionId: otherSession.id,
     requestId: randomUUID(),
@@ -615,7 +615,7 @@ try {
     input: { text: "保存历史图片作品" },
     model: "test-client-image",
     output: {
-      greeting: "图片作品已保存。",
+      aJoker: "图片作品已保存。",
       association: "图片兼容",
       artifacts: [artifacts.find((artifact) => artifact.kind === "image")!],
     },
@@ -626,7 +626,7 @@ try {
     input: { text: "保存历史网页作品" },
     model: "test-client-page",
     output: {
-      greeting: "网页作品已保存。",
+      aJoker: "网页作品已保存。",
       association: "网页兼容",
       artifacts: [artifacts.find((artifact) => artifact.kind === "page")!],
     },

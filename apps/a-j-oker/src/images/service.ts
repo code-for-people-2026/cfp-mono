@@ -48,7 +48,7 @@ export class ImageGenerationService {
   ) {}
   async generate(turnId: number, value: ImageRequest, signal: AbortSignal, apiKey?: string, progress?: (stage: GenerationProgress) => void): Promise<GeneratedImage> {
     signal.throwIfAborted();
-    let row = await this.repo.get("greetings", turnId);
+    let row = await this.repo.get("a-j-oker", turnId);
     if (row.status !== "running" || row.visibility === "quarantined") throw new AppError(409, "本轮已结束或停止展示，不能继续生图");
     await assertGenerationAllowed(this.repo.payload, this.repo.owner.id);
     let state = readImageState(row);
@@ -69,7 +69,7 @@ export class ImageGenerationService {
         turnId, sessionId: Number(row.sessionId), apiKey }));
     } catch (error) {
       if (state && error instanceof ContentReviewError && error.status === 422)
-        await this.repo.update("greetings", turnId, { imageGeneration: { ...state, status: "blocked" } });
+        await this.repo.update("a-j-oker", turnId, { imageGeneration: { ...state, status: "blocked" } });
       throw error;
     }
     signal.throwIfAborted();
@@ -88,7 +88,7 @@ export class ImageGenerationService {
       await reserveImageTask(this.repo.payload, this.repo.owner.id);
       signal.throwIfAborted();
       state = { input, model: WAN_MODEL, status: "submitting", startedAt: new Date().toISOString() };
-      await this.repo.update("greetings", turnId, { imageGeneration: state });
+      await this.repo.update("a-j-oker", turnId, { imageGeneration: state });
       progress?.({ stageId: "image_generation", stepName: "阿 J 先生正在绘制图片" });
       let taskId: string;
       try { taskId = await provider.submit(input, signal); }
@@ -96,11 +96,11 @@ export class ImageGenerationService {
         // Only definitive rejection ends submitting. Lost acknowledgements stay
         // uncertain, so recovery never silently submits a second paid task.
         if (error instanceof ContentReviewError || error instanceof ImageSubmissionRejected)
-          await this.repo.update("greetings", turnId, { imageGeneration: { ...state, status: error instanceof ContentReviewError ? "blocked" : "failed" } });
+          await this.repo.update("a-j-oker", turnId, { imageGeneration: { ...state, status: error instanceof ContentReviewError ? "blocked" : "failed" } });
         throw error;
       }
       state = { ...state, taskId, status: "pending" };
-      await this.repo.update("greetings", turnId, { imageGeneration: state });
+      await this.repo.update("a-j-oker", turnId, { imageGeneration: state });
     }
     if (!state.taskId) throw new AppError(409, "生图任务编号缺失，未重新提交");
     try {
@@ -112,15 +112,15 @@ export class ImageGenerationService {
       const review = await reviewImage(this.repo, normalized, this.reviewer, { stage: "output_image", turnId, sessionId: Number(row.sessionId) });
       signal.throwIfAborted();
       await assertGenerationAllowed(this.repo.payload, this.repo.owner.id);
-      row = await this.repo.get("greetings", turnId);
+      row = await this.repo.get("a-j-oker", turnId);
       if (row.visibility === "quarantined" || row.status !== "running") throw new AppError(403, "本轮已停止，图片不再发布");
       const media = await this.media.save(normalized, { turnId, provider: "bailian", model: state.model, taskId: state.taskId });
       await this.repo.update("media", media.id, { safetyReview: review });
-      await this.repo.update("greetings", turnId, { imageGeneration: { ...state, status: "stored", mediaId: media.id } });
+      await this.repo.update("a-j-oker", turnId, { imageGeneration: { ...state, status: "stored", mediaId: media.id } });
       return { mediaId: media.id, title: state.input.title, alt: state.input.alt };
     } catch (error) {
       if ((error instanceof ContentReviewError && !(error instanceof ImageReviewUnavailableError)) || error instanceof ImageTaskFailed)
-        await this.repo.update("greetings", turnId, { imageGeneration: { ...state, status: error instanceof ContentReviewError ? "blocked" : "failed" } });
+        await this.repo.update("a-j-oker", turnId, { imageGeneration: { ...state, status: error instanceof ContentReviewError ? "blocked" : "failed" } });
       // Network, decoding and storage failures retain the task ID for explicit recovery.
       throw error;
     }

@@ -12,7 +12,7 @@ import {
   ajSurfaceName,
   approachSchema,
   formResponseSchema,
-  greetingSchema,
+  aJokerSchema,
   legacyAjA2uiMessageSchema,
   projectAjTurnForClient,
   selectAjArtifactsForPresentation,
@@ -145,8 +145,8 @@ describe("AJ 展示契约所有权", () => {
     expect(base).not.toHaveProperty("formResponseSchema");
     expect(approachSchema.parse("cbt")).toBe("cbt");
     expect(
-      greetingSchema.safeParse({
-        greeting: "先休息一下。",
+      aJokerSchema.safeParse({
+        aJoker: "先休息一下。",
         association: "工作压力",
         approach: "behavioral",
         artifacts: legacyArtifacts,
@@ -186,8 +186,8 @@ describe("AJ 展示契约所有权", () => {
       ],
     };
     expect(
-      greetingSchema.safeParse({
-        greeting: "先一起看一个原因。",
+      aJokerSchema.safeParse({
+        aJoker: "先一起看一个原因。",
         association: "情绪支持",
         artifacts: [card, form],
       }).success,
