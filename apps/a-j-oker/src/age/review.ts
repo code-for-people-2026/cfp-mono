@@ -4,7 +4,7 @@ import type { AgeProfile, SafetyCase } from "../payload-types";
 import { AppError, type Owner } from "../domain/contracts";
 import { audit } from "../operations/audit";
 import { workingDeadline } from "../operations/deadlines";
-import { finiteRetentionBasis, isAdministrator, settings } from "../operations/policy";
+import { finiteRetentionBasis, isAdministrator, isAppealReviewer, settings } from "../operations/policy";
 import { MANUAL_AGE_ASSURANCE, MANUAL_AGE_SOURCE, ageNotice } from "./policy";
 import { transaction } from "../operations/transaction";
 import { inputSchema } from "../domain/contracts";
@@ -238,8 +238,9 @@ export async function requireAgeRiskCase(payload: Payload, owner: string, source
 export async function decideAgeReview(payload: Payload, user: TypedUser, row: SafetyCase, action: string, reason: string, reply: string | undefined, req: PayloadRequest) {
   if (!isAgeReviewCase(row)) return false;
   if (!["permit_age_reverification", "maintain_age_restriction", "restore_age_access"].includes(action)) return false;
-  if (!isAdministrator(user)) throw new AppError(403, "年龄复核结论需要系统管理员");
-  if (row.assignedTo !== user.id) throw new AppError(403, "请由已领取案件的管理员作出年龄复核结论");
+  if (!isAdministrator(user) && !(isAppealReviewer(user) && (row.parentId != null || row.lastReviewer != null)))
+    throw new AppError(403, "首次年龄复核结论需要系统管理员；独立申诉复核员只能处理已有决定的年龄复核");
+  if (row.assignedTo !== user.id) throw new AppError(403, "请由已领取案件的复核人员作出年龄复核结论");
   if (!reason) throw new AppError(400, "年龄复核结论必须填写具体理由");
   if (!reply) throw new AppError(400, "年龄复核结论必须填写给本人的说明");
   const current = await latestAgeReviewCase(payload, row.owner, req);

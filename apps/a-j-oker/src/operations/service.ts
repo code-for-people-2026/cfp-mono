@@ -5,7 +5,17 @@ import { type Payload, type PayloadRequest, type TypedUser, type Where } from "p
 import { z } from "zod";
 import { AppError, type Owner } from "../domain/contracts";
 import { audit } from "./audit";
-import { canReview, categories, isAdministrator, settings, settingSchema } from "./policy";
+import {
+  assertIndependentReviewer,
+  canReview,
+  canWorkCase,
+  categories,
+  isAdministrator,
+  isAppealReviewer,
+  settings,
+  settingSchema,
+  validateCaseAncestry,
+} from "./policy";
 import { decideAgeReview, isAgeReviewCase, latestAgeReviewCase } from "../age/review";
 import { MANUAL_AGE_ASSURANCE, MANUAL_AGE_SOURCE } from "../age/policy";
 import { retentionRecord, writeRetentionLedger } from "./retention-ledger";
@@ -113,6 +123,7 @@ export class OperationsService {
     z.string().trim().min(8).max(500).parse(reason);
     return transaction(this.payload, async (req) => {
       const row = await this.payload.findByID({ collection: "safety-cases", id, overrideAccess: true, req });
+      if (!canWorkCase(user, row)) throw new AppError(403, "独立申诉复核员只能访问申诉或待复核案件的必要证据");
       if (row.assignedTo !== user.id && !isAdministrator(user)) throw new AppError(403, "请先领取案件后按需查看证据");
       const evidence = (await this.payload.find({ collection: "safety-evidence", overrideAccess: true, req, limit: 1, where: { caseId: { equals: id } } })).docs[0];
       await audit(this.payload, `admin:${user.id}`, "evidence.read", `case:${id}`, reason, undefined, req);
@@ -131,6 +142,7 @@ export class OperationsService {
     return transaction(this.payload, async (req) => {
       const row = await this.payload.findByID({ collection: "safety-cases", id, overrideAccess: true, req });
       if (row.revision !== input.revision) throw new AppError(409, "案件已被其他人处理，请刷新");
+      const ancestry = await validateCaseAncestry(this.payload, row, req);
       if (row.retentionPurgedAt) {
         if (input.action !== "review_purged_restriction") throw new AppError(409, "案件内容已清理；后续处置必须新建独立案件，不得向已清理案件追加文字");
         if (!isAdministrator(user) || !row.retentionReviewNeeded) throw new AppError(403, "只有管理员可为仍在生效的已清理限制新建独立复核案件");
@@ -150,6 +162,7 @@ export class OperationsService {
       const patch: Record<string, unknown> = { revision: input.revision + 1 };
       if (input.action === "claim") {
         if (row.status === "resolved") throw new AppError(409, "已结案事项应通过复核重新受理");
+        if (!canWorkCase(user, row)) throw new AppError(403, "独立申诉复核员只能领取申诉或待复核案件");
         if (row.assignedTo && row.assignedTo !== user.id && !isAdministrator(user)) throw new AppError(409, "案件已有负责人");
         Object.assign(patch, { assignedTo: user.id, acceptedAt: row.acceptedAt || now, status: row.status === "review" ? "review" : "in_progress", severity: input.severity || row.severity, category: input.category || row.category });
       } else if (["hold", "release_hold", "extend_retention", "activate_retention"].includes(input.action)) {
@@ -172,25 +185,27 @@ export class OperationsService {
           Object.assign(patch, { retainUntil: input.retainUntil, retentionBasis: input.reason, retentionReviewNeeded: false });
         }
       } else if (input.action === "review") {
+        if (!canWorkCase(user, row)) throw new AppError(403, "独立申诉复核员只能转交申诉或待复核案件");
+        if (isAppealReviewer(user) && row.status === "resolved" && row.parentId == null)
+          throw new AppError(403, "独立申诉复核员对本人已结根案只能补充反馈");
         if (row.assignedTo !== user.id && !isAdministrator(user)) throw new AppError(403, "请由负责人或管理员转交复核");
         Object.assign(patch, { status: "review", assignedTo: null, resolvedAt: null, feedbackAt: null });
       } else {
+        if (!canWorkCase(user, row)) throw new AppError(403, "独立申诉复核员只能处理申诉或待复核案件");
         if (row.assignedTo !== user.id) throw new AppError(403, "请由案件负责人操作");
         if (input.action === "feedback") {
           if (row.status !== "resolved" || !input.reply) throw new AppError(409, "处置完成后填写反馈内容");
           Object.assign(patch, { reply: input.reply, feedbackAt: now });
         } else {
           if (!["in_progress", "review"].includes(String(row.status))) throw new AppError(409, "请先受理案件");
-          if (row.status === "review" && row.lastReviewer === user.id) throw new AppError(403, "复核须由不同人员完成");
-          if (row.parentId) {
-            const parent = await this.payload.findByID({ collection: "safety-cases", id: Number(row.parentId), overrideAccess: true, req });
-            if (parent.lastReviewer === user.id) throw new AppError(403, "申诉须由原处置人以外的人员复核");
-          }
-          if (["restrict", "unrestrict"].includes(input.action) && !isAdministrator(user)) throw new AppError(403, "用户生成限制需要管理员");
           if (isAgeReviewCase(row) && !AGE_REVIEW_ACTION_SET.has(input.action))
             throw new AppError(409, "年龄复核案件只能批准重新本人核验、维持限制或直接解除年龄限制");
           if (!isAgeReviewCase(row) && AGE_REVIEW_ACTION_SET.has(input.action))
             throw new AppError(409, "此动作仅适用于年龄复核案件");
+          assertIndependentReviewer(ancestry, user, input.action);
+          if (input.action === "restrict" && !isAdministrator(user)) throw new AppError(403, "首次用户生成限制需要管理员");
+          if (input.action === "unrestrict" && !isAdministrator(user) && !isAppealReviewer(user))
+            throw new AppError(403, "解除用户生成限制需要管理员或独立申诉复核员");
           await decideAgeReview(this.payload, user, row, input.action, input.reason, input.reply, req);
           if (input.action === "reject") {
             if (row.source !== "moderation" || !["input", "output"].includes(row.stage) || row.mediaId)
@@ -204,7 +219,8 @@ export class OperationsService {
             }
           }
           if (["quarantine", "restore"].includes(input.action) && !row.turnId && !row.mediaId) throw new AppError(400, "此案件没有可处置的已存内容");
-          if (["quarantine", "restore", "restrict", "unrestrict"].includes(input.action)) await this.enforce(row, input.action, input.reason, req);
+          if (["quarantine", "restrict", "unrestrict"].includes(input.action) || input.action === "restore")
+            await this.enforce(row, input.action, input.reason, req, ancestry.root);
           const config = await settings(this.payload, req);
           Object.assign(patch, { status: "resolved", resolvedAt: now, action: input.action, reason: input.reason, lastReviewer: user.id,
             feedbackBy: ["complaint", "appeal"].includes(row.source) ? row.resolveBy : config ? new Date(Date.now() + Number(config.feedbackHours) * 3600_000).toISOString() : null,
@@ -226,9 +242,7 @@ export class OperationsService {
       return changed.docs[0];
     });
   }
-  private async enforce(row: Doc, action: string, reason: string, req: PayloadRequest) {
-    let origin = row;
-    while (origin.parentId) origin = await this.payload.findByID({ collection: "safety-cases", id: Number(origin.parentId), overrideAccess: true, req });
+  private async enforce(row: Doc, action: string, reason: string, req: PayloadRequest, origin: Doc) {
     const caseId = origin.id;
     const active = ["quarantine", "restrict"].includes(action);
     const targetType = ["restrict", "unrestrict"].includes(action) ? "owner" : row.turnId ? "turn" : "media";
