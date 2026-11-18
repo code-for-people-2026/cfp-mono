@@ -32,7 +32,7 @@ export const canReadSafetyCases = (user: unknown, slug: string) => {
   // apply safety-case-only fields (parentId/status) to a schema lacking them.
   return slug === "safety-cases" ? appealReviewerCaseScope((user as { id?: string | number }).id ?? "") : false;
 };
-export const isAppealReviewCase = (user: unknown, row: Pick<SafetyCase, "parentId" | "status" | "lastReviewer">) => {
+const isAppealReviewCase = (user: unknown, row: Pick<SafetyCase, "parentId" | "status" | "lastReviewer">) => {
   if (!isAppealReviewer(user)) return false;
   return row.parentId != null || row.status === "review" ||
     (row.status === "resolved" && row.lastReviewer != null && String(row.lastReviewer) === String((user as { id?: string | number }).id));
@@ -100,7 +100,7 @@ async function firstDecisiveActor(payload: Payload, row: SafetyCase, req: Payloa
   return decisionActor(rowAudit?.actor) ?? (row.lastReviewer == null ? undefined : String(row.lastReviewer));
 }
 
-export type CaseAncestry = {
+type CaseAncestry = {
   chain: SafetyCase[];
   root: SafetyCase;
   immediateActor?: string;
