@@ -33,7 +33,7 @@ describe("词库候选匹配", () => {
     expect(find(ignored.join(" ") + " 诈骗", 20, new Set(ignored))).toEqual(["诈骗"]);
   });
   it("覆盖嵌套作品和插画文字，不只检查回复正文", () => {
-    expect(textLeaves({ greeting: "你好", artifacts: [{ fields: [{ label: "题目" }], source: { shapes: [{ text: "插画文字" }] } }] }))
+    expect(textLeaves({ aJoker: "你好", artifacts: [{ fields: [{ label: "题目" }], source: { shapes: [{ text: "插画文字" }] } }] }))
       .toEqual(["你好", "题目", "插画文字"]);
   });
 });
@@ -78,7 +78,7 @@ describe("命中后的语境复核", () => {
       service_scope: "support",
       interaction: { minor: false, crisis: true, dependency: false, overuse: false, exit: false, forget_context: true, image_requested: false, single_choice_only: false },
     }));
-    const context = JSON.stringify({ memory: "用户需要完成稿件", previous: [{ input: { text: "昨天提到稿件", mediaIds: [] }, greeting: "我在" }] });
+    const context = JSON.stringify({ memory: "用户需要完成稿件", previous: [{ input: { text: "昨天提到稿件", mediaIds: [] }, aJoker: "我在" }] });
     const verdict = await moderateText({
       ...request, serviceScope: true, interaction: true, texts: ["有人提醒我交稿，但我不想加班，心里很烦。"], context,
     });

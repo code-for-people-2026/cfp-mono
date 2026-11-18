@@ -22,24 +22,35 @@ import { authenticate, mintCredential as issueCredential } from "../server/auth"
 import { GET, POST } from "../app/api/hello/[...path]/route";
 import { POST as mcpPost } from "../app/api/mcp/route";
 import { handleMcp } from "../server/mcp";
-import { GreetingService } from "../domain/greetings";
+import { AJokerService } from "../domain/a-j-oker";
 import { Repository } from "../cms/repository";
 import { privacyPolicy } from "./policy";
 import { up as initialPreview } from "../cms/migrations/20260930_123608_initial_preview";
+import { up as privateImageObjectsMigration } from "../cms/migrations/20261002_014226_private_image_objects";
 import { up as artifactsMigration } from "../cms/migrations/20261010_060548_response_artifacts";
+import { up as agentConfigurationMigration } from "../cms/migrations/20261012_035545_agent_configuration";
+import { up as platformQuotaMigration } from "../cms/migrations/20261013_125923_platform_model_quota";
 import { up as initial } from "../cms/migrations/20261013_151000_privacy_lifecycle";
 import { up as historyInspection } from "../cms/migrations/20261013_175000_privacy_history_inspection";
 import { up as revision } from "../cms/migrations/20261013_174000_privacy_revision";
+import { up as imageGenerationMigration } from "../cms/migrations/20261014_080000_image_generation";
+import { up as a2aExecutionMigration } from "../cms/migrations/20261113_120000_a2a_execution";
+import { up as expertHandoffMigration } from "../cms/migrations/20261115_090000_expert_handoff";
+import { up as expertSubtitleMigration } from "../cms/migrations/20261116_090000_expert_subtitle";
+import { up as handoffPreambleMigration } from "../cms/migrations/20261117_100000_handoff_preamble";
+import { up as firstAdminMigration } from "../cms/migrations/20261117_150000_first_admin_latch";
+import { up as ageEvidenceMigration } from "../cms/migrations/20261117_170000_age_review_conversation_evidence";
+import { up as renameMigration } from "../cms/migrations/20261118_100000_rename_a_j_oker";
 
 // An isolated database exercises the real
 // Payload profile reads, SQLite CAS and additive migration in isolation.
 const holder = vi.hoisted(() => ({ payload: undefined as Payload | undefined }));
 vi.mock("../cms/client", () => ({ cms: () => holder.payload }));
 const business = vi.hoisted(() => ({ createSession: vi.fn(), generate: vi.fn(), history: vi.fn(), image: vi.fn(), sessions: vi.fn(), submission: vi.fn(), context: vi.fn() }));
-vi.mock("../domain/greetings", () => ({ GreetingService: class {
+vi.mock("../domain/a-j-oker", () => ({ AJokerService: class {
   constructor(readonly repo: Repository) {}
   createSession() { return business.createSession(); }
-  generateGreeting() { return business.generate(); }
+  generateAJoker() { return business.generate(); }
   history() { return business.history(); }
   sessions() { return business.sessions(); }
   submission() { return business.submission(); }
@@ -47,11 +58,11 @@ vi.mock("../domain/greetings", () => ({ GreetingService: class {
 } }));
 beforeEach(() => {
   business.createSession.mockReset().mockResolvedValue({ id: 7 });
-  business.generate.mockReset().mockResolvedValue({ id: 1, greeting: "synthetic reply", artifacts: [], status: "completed" });
-  business.history.mockReset().mockResolvedValue([{ id: 1, greeting: "synthetic history" }]);
+  business.generate.mockReset().mockResolvedValue({ id: 1, aJoker: "synthetic reply", artifacts: [], status: "completed" });
+  business.history.mockReset().mockResolvedValue([{ id: 1, aJoker: "synthetic history" }]);
   business.image.mockReset().mockResolvedValue({ bytes: Buffer.from("synthetic-image"), mimeType: "image/jpeg" });
   business.sessions.mockReset().mockResolvedValue([{ id: 7, title: "synthetic title" }]);
-  business.submission.mockReset().mockResolvedValue({ turn: { id: 1, greeting: "synthetic result" } });
+  business.submission.mockReset().mockResolvedValue({ turn: { id: 1, aJoker: "synthetic result" } });
   business.context.mockReset().mockResolvedValue({ summary: "synthetic summary" });
 });
 vi.mock("../domain/context", () => ({ ContextService: class {
@@ -65,17 +76,21 @@ beforeAll(async () => {
   payload = await new BasePayload().init({ config: buildConfig({
     secret: "isolated-profile-test", telemetry: false,
     db: sqliteAdapter({ client: { url: `file:${directory}/profiles.db` }, push: false, transactionOptions: {} }),
-    collections: [...operationsCollections, ...privacyCollections, ...ageCollections, { slug: "greetings", access: { read: () => true }, fields: [{ name: "owner", type: "text" }, { name: "input", type: "json" }, { name: "artifacts", type: "json" }, { name: "status", type: "text" }, { name: "mode", type: "text" }, { name: "fingerprint", type: "text" }] }, { slug: "admins", auth: true, fields: [] }, { slug: "credentials", fields: [{ name: "owner", type: "text" }, { name: "kind", type: "text" }, { name: "digest", type: "text" }, { name: "wechatKey", type: "text" }, { name: "expiresAt", type: "date" }] }],
+    collections: [...operationsCollections, ...privacyCollections, ...ageCollections, { slug: "a-j-oker", access: { read: () => true }, fields: [{ name: "owner", type: "text" }, { name: "input", type: "json" }, { name: "artifacts", type: "json" }, { name: "status", type: "text" }, { name: "mode", type: "text" }, { name: "fingerprint", type: "text" }] }, { slug: "admins", auth: true, fields: [] }, { slug: "credentials", fields: [{ name: "owner", type: "text" }, { name: "kind", type: "text" }, { name: "digest", type: "text" }, { name: "wechatKey", type: "text" }, { name: "expiresAt", type: "date" }] }],
   }) });
   holder.payload = payload;
   const args = { db: payload.db.drizzle } as MigrateUpArgs;
   await initialPreview(args);
+  await privateImageObjectsMigration(args);
   await artifactsMigration(args);
+  await agentConfigurationMigration(args);
+  await platformQuotaMigration(args);
   await initial(args);
   await payload.db.drizzle.run(sql`INSERT INTO privacy_profiles (owner, state, consent) VALUES ('legacy', 'withdrawn', '{"core":true}')`);
   await revision(args);
   await historyInspection(args);
-  await ageMigration(args); await accountMigration(args); await correctionMigration(args); await safetyMigration(args); await interactionMigration(args); await feishuMigration(args); await finiteRetentionMigration(args);
+  await ageMigration(args); await accountMigration(args); await correctionMigration(args); await safetyMigration(args); await imageGenerationMigration(args); await interactionMigration(args); await feishuMigration(args); await a2aExecutionMigration(args); await finiteRetentionMigration(args);
+  await expertHandoffMigration(args); await expertSubtitleMigration(args); await handoffPreambleMigration(args); await firstAdminMigration(args); await ageEvidenceMigration(args); await renameMigration(args);
 }, 15_000);
 afterAll(async () => { await payload?.destroy(); if (directory) await rm(directory, { recursive: true, force: true }); });
 const consent = () => ({ version: privacyPolicy().version, core: true, model: true, sensitive: false, external: false });
@@ -287,7 +302,7 @@ function delayedRequest(url: string, headers: Record<string, string>, body: unkn
   const init: RequestInit & { duplex: "half" } = { method: "POST", headers, body: stream, duplex: "half" };
   return { paused, resume, request: new Request(url, init) };
 }
-it.each((["cookie", "miniapp"] as const).flatMap((kind) => ["sessions", "greet", "ag-ui"].map((route) => ({ kind, route }))))("$kind 延迟 $route 正文跨过恢复后拒绝执行业务", async ({ kind, route }) => {
+it.each((["cookie", "miniapp"] as const).flatMap((kind) => ["sessions", "a-j-oker", "ag-ui"].map((route) => ({ kind, route }))))("$kind 延迟 $route 正文跨过恢复后拒绝执行业务", async ({ kind, route }) => {
   const service = await authorized(`business-${kind}-${route}`);
   const { code } = await service.recoveryCode();
   const old = await mintCredential(payload, kind, service.repo.owner.id);
@@ -314,7 +329,7 @@ it.each(unclassifiedHistory.flatMap((text) => [false, true].map((inspected) => (
   const service = await authorized(`external-history-${crypto.randomUUID()}`);
   await service.consent({ ...((await profileFor(payload, service.repo.owner.id))!.consent as object), sensitive: false });
   await updateProfile(payload, (await profileFor(payload, service.repo.owner.id))!, { historyInspected: inspected, sensitiveHistory: false });
-  await payload.db.drizzle.run(sql`INSERT INTO greetings (owner, session_id, request_key, fingerprint, mode, status, input) VALUES (${service.repo.owner.id}, 7, ${crypto.randomUUID()}, 'fixture', 'external', 'completed', ${JSON.stringify({ text, mediaIds: [] })})`);
+  await payload.db.drizzle.run(sql`INSERT INTO a_j_oker (owner, session_id, request_key, fingerprint, mode, status, input) VALUES (${service.repo.owner.id}, 7, ${crypto.randomUUID()}, 'fixture', 'external', 'completed', ${JSON.stringify({ text, mediaIds: [] })})`);
   const current = (await profileFor(payload, service.repo.owner.id))!;
   const token = await legacyCredential(payload, service.repo.owner.id); // legacy credential with external-only consent
   const requestId = crypto.randomUUID();
@@ -332,7 +347,7 @@ it.each(unclassifiedHistory.flatMap((text) => [false, true].map((inspected) => (
       expect(response.status).toBe(403);
       expect(await response.text()).not.toContain(text);
     }
-    expect(read.mock.calls.some(([options]) => options.collection === "greetings")).toBe(false);
+    expect(read.mock.calls.some(([options]) => options.collection === "a-j-oker")).toBe(false);
     for (const operation of [business.history, business.sessions, business.submission, business.context]) expect(operation).not.toHaveBeenCalled();
     expect(await profileFor(payload, service.repo.owner.id)).toEqual(current);
   } finally { read.mockRestore(); }
@@ -351,12 +366,12 @@ it.each(["hello_get_history", "hello_get_context"])("MCP 工具 %s 自身也检�
   const service = await authorized(`direct-tool-${tool}`);
   await service.consent({ ...((await profileFor(payload, service.repo.owner.id))!.consent as object), sensitive: false });
   const body = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: tool, arguments: { sessionId: 7 } } };
-  const response = await handleMcp(new Request("http://localhost/api/mcp", { method: "POST", headers: rpcHeaders("test-direct-handler"), body: JSON.stringify(body) }), body, new GreetingService(service.repo));
+  const response = await handleMcp(new Request("http://localhost/api/mcp", { method: "POST", headers: rpcHeaders("test-direct-handler"), body: JSON.stringify(body) }), body, new AJokerService(service.repo));
   expect((await response.json()).result.isError).toBe(true);
   expect(business.history).not.toHaveBeenCalled(); expect(business.context).not.toHaveBeenCalled();
 });
 
-it.each(["greet", "ag-ui", "context"])("外部 bearer 不能经 REST %s 绕过敏感授权复用历史", async (route) => {
+it.each(["a-j-oker", "ag-ui", "context"])("外部 bearer 不能经 REST %s 绕过敏感授权复用历史", async (route) => {
   const service = await authorized(`external-processing-${route}`);
   await service.consent({ ...((await profileFor(payload, service.repo.owner.id))!.consent as object), sensitive: false });
   const token = await legacyCredential(payload, service.repo.owner.id);
@@ -400,7 +415,7 @@ it.each(["success", "failure", "disconnect"])("AG-UI %s 在后台生成结束前
   const { code } = await service.recoveryCode();
   const credential = await mintCredential(payload, "miniapp", service.repo.owner.id);
   const started = Promise.withResolvers<void>(), finish = Promise.withResolvers<void>();
-  business.generate.mockImplementationOnce(async () => { started.resolve(); await finish.promise; if (mode === "failure") throw new Error("injected provider error"); return { id: 1, greeting: "ok", artifacts: [], status: "completed" }; });
+  business.generate.mockImplementationOnce(async () => { started.resolve(); await finish.promise; if (mode === "failure") throw new Error("injected provider error"); return { id: 1, aJoker: "ok", artifacts: [], status: "completed" }; });
   vi.stubEnv("HELLO_ORIGIN", "http://localhost");
   const response = await POST(new Request("http://localhost/api/hello/ag-ui", { method: "POST", headers: { origin: "http://localhost", authorization: `Bearer ${credential.token}` }, body: JSON.stringify(agentBody()) }), { params: Promise.resolve({ path: ["ag-ui"] }) });
   try {
@@ -421,7 +436,7 @@ it.each(["media", "artifact-image"])("关闭敏感授权后，REST %s 拒绝外�
   const personal = await mintCredential(payload, "miniapp", service.repo.owner.id);
   if (route === "artifact-image") {
     const artifact = { kind: "image", id: "uploaded", title: "用户图片", alt: "合成图片", source: { type: "media", mediaId: 1 } };
-    await payload.db.drizzle.run(sql`INSERT INTO greetings (id, owner, session_id, request_key, fingerprint, mode, status, input, artifacts) VALUES (900, ${service.repo.owner.id}, 7, 'image-scope', 'fixture', 'external', 'completed', '{"text":"普通输入","mediaIds":[]}', ${JSON.stringify([artifact])})`);
+    await payload.db.drizzle.run(sql`INSERT INTO a_j_oker (id, owner, session_id, request_key, fingerprint, mode, status, input, artifacts) VALUES (900, ${service.repo.owner.id}, 7, 'image-scope', 'fixture', 'external', 'completed', '{"text":"普通输入","mediaIds":[]}', ${JSON.stringify([artifact])})`);
   }
   const path = route === "media" ? ["media", "1"] : ["artifact-image", "900", "uploaded"];
   const read = (headers: Record<string, string>) => GET(new Request(`http://localhost/api/hello/${path.join("/")}`, { headers }), { params: Promise.resolve({ path }) });

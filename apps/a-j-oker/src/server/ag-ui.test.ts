@@ -32,10 +32,10 @@ describe("AG-UI 协议适配", () => {
     const body = request();
     const response = agentStream(
       {
-        generateGreeting: async () => ({
+        generateAJoker: async () => ({
           id: 12,
           owner: "private-owner",
-          greeting: "这算什么呢，先看眼前。",
+          aJoker: "这算什么呢，先看眼前。",
           artifacts,
           status: "completed",
         }),
@@ -88,9 +88,9 @@ describe("AG-UI 协议适配", () => {
       preferredComponents: ["form" as const],
     };
     const service = {
-      generateGreeting: async () => ({
+      generateAJoker: async () => ({
         id: 31,
-        greeting: "先整理下一步。",
+        aJoker: "先整理下一步。",
         artifacts,
         status: "completed" as const,
         model: "deepseek-chat",
@@ -131,7 +131,7 @@ describe("AG-UI 协议适配", () => {
   it("失败只发 RUN_ERROR，不发布成功事件或供应商错误原文", async () => {
     const wire = await agentStream(
       {
-        generateGreeting: async () => {
+        generateAJoker: async () => {
           throw new Error("secret-provider-body");
         },
       },
@@ -145,7 +145,7 @@ describe("AG-UI 协议适配", () => {
     const body = request();
     const wire = await agentStream(
       {
-        generateGreeting: async () => {
+        generateAJoker: async () => {
           throw new ServiceProblemError(
             503,
             "服务暂时不可用，本次尚未开始生成。",
@@ -176,11 +176,11 @@ describe("AG-UI 协议适配", () => {
     let generated = 0;
     const wire = await agentStream(
       {
-        generateGreeting: async () => {
+        generateAJoker: async () => {
           generated++;
           return {
             id: 21,
-            greeting: "文字回应已经保存。",
+            aJoker: "文字回应已经保存。",
             status: "completed" as const,
             artifacts: [
               {

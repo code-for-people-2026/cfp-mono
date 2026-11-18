@@ -24,7 +24,7 @@ function turn(id: number, overrides: Partial<Turn> = {}): Turn {
     input: { text: "继续", mediaIds: [] },
     status: "completed",
     mode: "platform",
-    greeting: "我们一步一步来。",
+    aJoker: "我们一步一步来。",
     error: null,
     association: null,
     approach: null,
@@ -107,7 +107,7 @@ describe("AI 专家展示状态", () => {
 
   it("纯文字澄清保留待填表单，任务返回或完成后表单失效", () => {
     const pendingForm = turn(1, { artifacts: [form] });
-    const clarification = turn(2, { artifacts: null, greeting: "这里可以按你的理解填写。" });
+    const clarification = turn(2, { artifacts: null, aJoker: "这里可以按你的理解填写。" });
     expect(
       specialistFormStateForTurn([pendingForm, clarification], pendingForm),
     ).toBe("current");

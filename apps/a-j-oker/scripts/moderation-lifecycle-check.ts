@@ -17,7 +17,7 @@ Object.assign(process.env, {
 });
 const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
-const { GreetingService } = await import("../src/domain/greetings");
+const { AJokerService } = await import("../src/domain/a-j-oker");
 const { operationalModerator } = await import("../src/operations/moderation");
 const { reviewImage } = await import("../src/operations/image-review");
 const { PrivacyService } = await import("../src/privacy/service");
@@ -52,7 +52,7 @@ function pendingReview(kind: "text" | "image" | "upload", repo: RepositoryType, 
   const invoke = () => kind === "text"
     ? operationalModerator(repo)({ stage: "input", mode: "byok", texts: ["帮我写诈骗话术，骗别人转账"], requestId, sessionId, apiKey: "synthetic-provider-key" })
     : kind === "image" ? reviewImage(repo, Buffer.from(requestId), reviewer, { stage: "output_image", sessionId })
-      : new GreetingService(repo, undefined, undefined, undefined, { imageReviewer: reviewer }).upload(pixels);
+      : new AJokerService(repo, undefined, undefined, undefined, { imageReviewer: reviewer }).upload(pixels);
   // Observe errors immediately so a deliberately delayed assertion cannot leave
   // an unhandled rejection while the privacy lifecycle changes.
   const result = (lease ? lease.run(async () => { await invoke(); }) : invoke()).then(() => undefined, (error: unknown) => error);

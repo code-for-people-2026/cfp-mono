@@ -3,11 +3,11 @@ import { isDeepStrictEqual } from "node:util";
 import { AppError } from "../domain/contracts";
 import { referencedMediaIds, restrictedMedia } from "./enforcement";
 export const guardSafetyWrite: CollectionBeforeChangeHook = async ({ req, data, originalDoc, collection }) => {
-  if (!["greetings", "sessions"].includes(collection.slug)) return data;
+  if (!["a-j-oker", "sessions"].includes(collection.slug)) return data;
   const owner = data.owner ?? originalDoc?.owner;
   if (!owner) return data;
   const restrictions = (await req.payload.find({ collection: "safety-enforcements", overrideAccess: true, req, pagination: false, limit: 0, where: { and: [{ owner: { equals: owner } }, { active: { equals: true } }] } })).docs;
-  if (collection.slug === "greetings" && data.status === "completed") {
+  if (collection.slug === "a-j-oker" && data.status === "completed") {
     // Recheck shared images in the same transaction as publication. A reviewer
     // may quarantine a different turn while this turn awaits output moderation.
     const blockedMedia = await restrictedMedia(req.payload, owner, restrictions, req);

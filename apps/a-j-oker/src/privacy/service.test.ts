@@ -32,7 +32,7 @@ function fixture(priorInputs: unknown[] = []) {
   const payload = {
     find: vi.fn(async ({ collection, where, limit = 1 }: { collection: string; limit?: number; where?: { and?: { id?: { greater_than?: number } }[] } }) => {
       const cursor = where?.and?.find((clause) => clause.id)?.id?.greater_than || 0;
-      return { docs: collection === "privacy-profiles" ? [profile] : collection === "greetings" ? priorInputs.map((input, index) => ({ id: index + 1, input })).filter((row) => row.id > cursor).slice(0, limit) : [] };
+      return { docs: collection === "privacy-profiles" ? [profile] : collection === "a-j-oker" ? priorInputs.map((input, index) => ({ id: index + 1, input })).filter((row) => row.id > cursor).slice(0, limit) : [] };
     }),
     update,
     count: vi.fn(async () => ({ totalDocs: 0 })),
@@ -150,17 +150,17 @@ it("已有敏感标记时不再读取任何旧聊天", async () => {
   const { service, update } = fixture([{ text: "旧聊天" }]);
   await update({ data: { sensitiveHistory: true } });
   await service.requireInput({ text: "普通文字" });
-  expect(vi.mocked(service.repo.payload.find).mock.calls.some(([options]) => options.collection === "greetings")).toBe(false);
+  expect(vi.mocked(service.repo.payload.find).mock.calls.some(([options]) => options.collection === "a-j-oker")).toBe(false);
 });
 it("当前输入已触发敏感授权时无需扫描旧聊天", async () => {
   const { service } = fixture([{ text: "旧聊天" }]);
   await service.requireInput({ text: "焦虑" });
-  expect(vi.mocked(service.repo.payload.find).mock.calls.some(([options]) => options.collection === "greetings")).toBe(false);
+  expect(vi.mocked(service.repo.payload.find).mock.calls.some(([options]) => options.collection === "a-j-oker")).toBe(false);
 });
 it("未标记历史按有限批次取输入，命中后停止并保存标记", async () => {
   const { service, profile } = fixture([...Array.from({ length: 40 }, () => ({ text: "普通文字" })), { text: "焦虑" }, ...Array.from({ length: 60 }, () => ({ text: "后续页面不应读取" }))]);
   await service.requireInput({ text: "你好" });
-  const reads = vi.mocked(service.repo.payload.find).mock.calls.map(([options]) => options).filter((options) => options.collection === "greetings");
+  const reads = vi.mocked(service.repo.payload.find).mock.calls.map(([options]) => options).filter((options) => options.collection === "a-j-oker");
   expect(reads).toHaveLength(2);
   for (const [index, options] of reads.entries()) expect(options).toMatchObject({ limit: 32, pagination: false, depth: 0, sort: "id", select: { id: true, input: true }, overrideAccess: false, context: { helloOwner: "isolated" }, where: { and: [{ owner: { equals: "isolated" } }, { id: { greater_than: index * 32 } }] } });
   expect(profile().sensitiveHistory).toBe(true);
@@ -172,7 +172,7 @@ it("没有敏感内容的旧历史只检查一次，后续新敏感输入仍要�
   expect(profile()).toMatchObject({ sensitiveHistory: false, historyInspected: true });
   vi.mocked(service.repo.payload.find).mockClear();
   await service.requireInput({ text: "再次你好" });
-  expect(vi.mocked(service.repo.payload.find).mock.calls.some(([options]) => options.collection === "greetings")).toBe(false);
+  expect(vi.mocked(service.repo.payload.find).mock.calls.some(([options]) => options.collection === "a-j-oker")).toBe(false);
   await service.consent({ ...profile().consent as object, sensitive: false });
   await expect(service.requireInput({ text: "焦虑" })).rejects.toMatchObject({ status: 403 });
 });
@@ -181,11 +181,11 @@ it("大量普通旧历史按页扫描且仅检查一次，不进行逐条查询"
   const { service, profile } = fixture(Array.from({ length: 1000 }, () => ({ text: "普通旧输入" })));
   await service.requireInput({ text: "你好" });
   expect(profile().historyInspected).toBe(true);
-  const reads = vi.mocked(service.repo.payload.find).mock.calls.filter(([options]) => options.collection === "greetings");
+  const reads = vi.mocked(service.repo.payload.find).mock.calls.filter(([options]) => options.collection === "a-j-oker");
   expect(reads).toHaveLength(32);
   vi.mocked(service.repo.payload.find).mockClear();
   await service.requireInput({ text: "再次你好" });
-  expect(vi.mocked(service.repo.payload.find).mock.calls.some(([options]) => options.collection === "greetings")).toBe(false);
+  expect(vi.mocked(service.repo.payload.find).mock.calls.some(([options]) => options.collection === "a-j-oker")).toBe(false);
 });
 
 it("最终凭证撤销失败时保留 deleting，可重试完成删除", async () => {
@@ -210,7 +210,7 @@ it("已删除墓碑重复清理残留，不回退状态或改写首次删除时�
   expect(media).toHaveBeenCalledTimes(2);
 });
 
-it.each(["credentials", "greetings"] as const)("批量删除 %s 返回部分失败时保留冻结状态，重试可完成", async (collection) => {
+it.each(["credentials", "a-j-oker"] as const)("批量删除 %s 返回部分失败时保留冻结状态，重试可完成", async (collection) => {
   const { service, profile } = fixture();
   vi.spyOn(service.media, "deleteAll").mockResolvedValue(undefined);
   let injected = false;

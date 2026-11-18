@@ -5,7 +5,7 @@ import { GET, POST } from "../app/api/hello/[...path]/route";
 const service = vi.hoisted(() => ({ exportData: vi.fn(), withdraw: vi.fn(), recoverOwner: vi.fn() }));
 vi.mock("../cms/client", () => ({ cms: vi.fn(async () => ({})) }));
 vi.mock("./service", () => ({ privacyService: () => service, withRecoveredOwner: service.recoverOwner }));
-vi.mock("../domain/greetings", () => ({ GreetingService: class {} }));
+vi.mock("../domain/a-j-oker", () => ({ AJokerService: class {} }));
 vi.mock("../domain/context", () => ({ ContextService: class {} }));
 vi.mock("../server/ag-ui", () => ({ agentStream: vi.fn(), readAgentInput: vi.fn() }));
 vi.mock("../server/auth", () => ({ withAuthenticatedExecution: async (_payload: unknown, _request: Request, owner: Owner, action: (owner: Owner) => Promise<Response>) => action(owner), authenticate: vi.fn(async () => ({ id: "test-owner", auth: "cookie" })), checkOrigin: vi.fn(), checkClientRequest: vi.fn(), mintCredential: vi.fn(), revokeTokens: vi.fn(), COOKIE: "hello_identity" }));

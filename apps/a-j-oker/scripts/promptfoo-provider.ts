@@ -9,7 +9,7 @@ const directory = await mkdtemp(path.join(tmpdir(), "hello-promptfoo-"));
 process.env.HELLO_DATABASE_URI = `file:${directory}/eval.db`;
 const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
-const { GreetingService } = await import("../src/domain/greetings");
+const { AJokerService } = await import("../src/domain/a-j-oker");
 
 const payload = await cms();
 await (await import("../src/cms/seed")).seedAgents(payload);
@@ -20,11 +20,11 @@ export default class HelloProvider {
   }
   async callApi(prompt: string) {
     try {
-      const service = new GreetingService(
+      const service = new AJokerService(
         new Repository(payload, { id: randomUUID(), auth: "cookie" }),
       );
       const session = await service.createSession("Promptfoo 评测");
-      const result = await service.generateGreeting({
+      const result = await service.generateAJoker({
         sessionId: session.id,
         requestId: randomUUID(),
         mode: "platform",
@@ -32,7 +32,7 @@ export default class HelloProvider {
       });
       return {
         output: JSON.stringify({
-          greeting: result.greeting,
+          aJoker: result.aJoker,
           association: result.association,
           status: result.status,
           promptVersion: result.promptVersion,

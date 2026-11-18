@@ -1,6 +1,6 @@
 # 万相文生图接入
 
-DeepSeek → `generate_image` → 百炼万相 → 文件验证与图片审核 → 私有 OSS → `save_greeting` 图片作品 → 本人鉴权展示、下载。
+DeepSeek → `generate_image` → 百炼万相 → 文件验证与图片审核 → 私有 OSS → `save_a_j_oker` 图片作品 → 本人鉴权展示、下载。
 
 ## 行为
 
@@ -17,7 +17,7 @@ DeepSeek → `generate_image` → 百炼万相 → 文件验证与图片审核 �
 
 1. 为北京百炼配置专用 `DASHSCOPE_API_KEY`。可用 `HELLO_IMAGE_WORKSPACE_ID` 选择新业务空间专属域名；留空使用默认北京接口。限定密钥仅访问 `wan2.6-t2i`，不使用 OSS AccessKey 代替百炼密钥。DeepSeek 的 BYOK 仅用于对话，图片由平台百炼账户承担费用。
 2. 图片审核二选一：现有 HTTPS 代理及其接收方告知；或 `HELLO_IMAGE_REVIEW_MODE=aliyun-green`，配置独立的 `HELLO_GREEN_ACCESS_KEY_ID`、`HELLO_GREEN_ACCESS_KEY_SECRET`。后者使用上海内容安全增强版 `baselineCheck`，RAM 运行权限是 `yundun-greenweb:DescribeUploadToken`、`yundun-greenweb:ImageModeration`（Resource 为 `*`）。注意 SDK / CLI 产品名是 Green，RAM 权限前缀是 `yundun-greenweb`，不能写成 `green:`。只上传到服务返回的临时桶，不需要将本应用 OSS 公开或授予其全桶访问。`none` 放行，`high` 拒绝，`low` / `medium` 待复核，异常不放行。
-3. 复用现有私有 OSS 配置。备份 SQLite 后通过正式部署启动迁移（不要对现有部署库运行本地 db:init），新增 `greetings.image_generation`、`media.generation`、`media.generation_key` 及唯一索引，不修改旧图片。
+3. 复用现有私有 OSS 配置。备份 SQLite 后通过正式部署启动迁移（不要对现有部署库运行本地 db:init），新增 `a_j_oker.image_generation`、`media.generation`、`media.generation_key` 及唯一索引，不修改旧图片。
 4. 配置好云服务后，在隔离预览实例实测一张无敏感信息的图片、鉴权下载、刷新/恢复、OSS 对象以及删除。验证通过再发布。配置值不得写入代码、提交、命令日志或 Issue。
 
 | 配置 | 默认每日上限 | 作用 |

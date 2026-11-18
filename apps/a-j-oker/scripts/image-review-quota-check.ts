@@ -22,7 +22,7 @@ const { cms } = await import("../src/cms/client");
 const { migrations } = await import("../src/cms/migrations");
 const { Repository } = await import("../src/cms/repository");
 const { MediaService } = await import("../src/domain/media");
-const { GreetingService } = await import("../src/domain/greetings");
+const { AJokerService } = await import("../src/domain/a-j-oker");
 const { ImageGenerationService, readImageState } = await import("../src/images/service");
 const { reviewImage, configuredImageReviewer, imageReviewConfigured } = await import("../src/operations/image-review");
 const { configuredGreenReviewer } = await import("../src/images/aliyun-image-review");
@@ -38,7 +38,7 @@ try {
   Object.assign(process.env, { HELLO_IMAGE_REVIEW_OWNER_DAILY_LIMIT: "1", HELLO_IMAGE_REVIEW_GLOBAL_DAILY_LIMIT: "1" });
   for (const key of ["HELLO_IMAGE_REVIEW_MODE", "HELLO_IMAGE_REVIEW_URL", "HELLO_IMAGE_REVIEW_TOKEN", "HELLO_GREEN_ACCESS_KEY_ID", "HELLO_GREEN_ACCESS_KEY_SECRET"]) delete process.env[key];
   const configuredRepo = new Repository(payload, { id: randomUUID(), auth: "cookie" });
-  const configuredService = new GreetingService(configuredRepo, undefined, new MediaService(configuredRepo, () => undefined));
+  const configuredService = new AJokerService(configuredRepo, undefined, new MediaService(configuredRepo, () => undefined));
   const beforeConfigurationFailure = await counts();
   let proxyCalls = 0;
   let greenCalls = 0;
@@ -112,13 +112,13 @@ try {
   const fixture = async () => {
     const repo = new Repository(payload, { id: randomUUID(), auth: "cookie" });
     const media = new MediaService(repo, () => undefined);
-    const service = new GreetingService(repo, undefined, media, undefined, { moderate: allowText, imageReviewer: reviewer });
+    const service = new AJokerService(repo, undefined, media, undefined, { moderate: allowText, imageReviewer: reviewer });
     const session = await repo.create("sessions", { title: "制作休息提醒卡（合成图片审核）预算验证" });
-    const turn = () => repo.create("greetings", { sessionId: session.id, requestKey: randomUUID(), fingerprint: "synthetic", status: "running", mode: "byok", input: { text: "制作休息提醒卡（合成图片审核）", mediaIds: [] } });
+    const turn = () => repo.create("a-j-oker", { sessionId: session.id, requestKey: randomUUID(), fingerprint: "synthetic", status: "running", mode: "byok", input: { text: "制作休息提醒卡（合成图片审核）", mediaIds: [] } });
     return { repo, media, service, turn };
   };
   const illustration = { kind: "image" as const, id: "synthetic", title: "合成插画", alt: "绿色圆形", source: { type: "illustration" as const, background: "#ffffff", shapes: [{ type: "circle" as const, x: 100, y: 100, radius: 50, fill: "#559977" }] } };
-  const output = { greeting: "一张测试插画", association: "合成验证" };
+  const output = { aJoker: "一张测试插画", association: "合成验证" };
   const a = await fixture(), b = await fixture(), c = await fixture();
   await a.service.upload(pixels);
   const legacyTurn = await a.turn();
@@ -131,7 +131,7 @@ try {
   await assert.rejects(a.service.upload(pixels), { status: 429 });
   assert.equal(calls, 2);
   assert.deepEqual(await counts(), beforeOwnerRejection, "quota refusal creates no fake case, evidence, audit or media");
-  assert.equal((await a.repo.get("greetings", blockedIllustration.id)).greeting, null);
+  assert.equal((await a.repo.get("a-j-oker", blockedIllustration.id)).aJoker, null);
   const allowedIllustration = await b.turn();
   await b.service.complete(allowedIllustration.id, { ...output, artifacts: [illustration] });
   assert.equal(calls, 3, "another owner may spend the remaining global budget");
@@ -167,12 +167,12 @@ try {
   const generate = () => generator.generate(imageTurn.id, request, AbortSignal.timeout(15_000));
   decision = "unavailable";
   await assert.rejects(generate(), { status: 503 });
-  assert.equal(readImageState(await pending.repo.get("greetings", imageTurn.id))?.status, "pending");
+  assert.equal(readImageState(await pending.repo.get("a-j-oker", imageTurn.id))?.status, "pending");
   const taskLedger = await payload.db.drizzle.all(sql`SELECT day, reserved_calls FROM platform_model_quotas WHERE day LIKE 'image:%' ORDER BY day`);
   const beforePendingRejection = await counts(), beforePendingCalls = calls;
   decision = "allow";
   await assert.rejects(generate(), { status: 429 });
-  assert.equal(readImageState(await pending.repo.get("greetings", imageTurn.id))?.status, "pending", "quota exhaustion must not permanently block the paid task");
+  assert.equal(readImageState(await pending.repo.get("a-j-oker", imageTurn.id))?.status, "pending", "quota exhaustion must not permanently block the paid task");
   assert.equal(calls, beforePendingCalls);
   assert.equal(submissions, 1);
   assert.deepEqual(await counts(), beforePendingRejection);

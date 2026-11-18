@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import { PROMPT_VERSION } from "../src/agent/instruction";
-import type { Greeting } from "../src/payload-types";
+import type { AJoker } from "../src/payload-types";
 import type { Inspiration } from "@cfp/a-j-oker-contracts";
 
 if (!process.env.DEEPSEEK_API_KEY) {
@@ -19,13 +19,13 @@ const dir = await mkdtemp(path.join(tmpdir(), "a-j-oker-live-eval-"));
 process.env.HELLO_DATABASE_URI = `file:${dir}/eval.db`;
 const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
-const { GreetingService } = await import("../src/domain/greetings");
+const { AJokerService } = await import("../src/domain/a-j-oker");
 const payload = await cms();
 await (await import("../src/cms/seed")).seedAgents(payload);
-const service = new GreetingService(
+const service = new AJokerService(
   new Repository(payload, { id: randomUUID(), auth: "cookie" }),
 );
-const results: (Pick<Greeting, "promptVersion" | "greeting" | "association" | "model" | "durationMs"> & { case: string; input: Partial<Inspiration> })[] = [];
+const results: (Pick<AJoker, "promptVersion" | "aJoker" | "association" | "model" | "durationMs"> & { case: string; input: Partial<Inspiration> })[] = [];
 try {
   const session = await service.createSession("真实模型评测");
   const image = await service.upload(
@@ -78,7 +78,7 @@ try {
     },
   ];
   for (const item of cases) {
-    const result = await service.generateGreeting({
+    const result = await service.generateAJoker({
       sessionId: session.id,
       requestId: randomUUID(),
       mode: item.mode,
@@ -91,23 +91,23 @@ try {
     });
     assert.equal(result.status, "completed");
     assert.ok(
-      typeof result.greeting === "string" && result.greeting.length >= 2,
+      typeof result.aJoker === "string" && result.aJoker.length >= 2,
     );
     assert.equal(result.promptVersion, PROMPT_VERSION);
     if (item.name === "阿 J 先生身份")
-      assert.match(String(result.greeting), /阿\s*J\s*先生/i);
+      assert.match(String(result.aJoker), /阿\s*J\s*先生/i);
     results.push({
       case: item.name,
       input: item.input,
       promptVersion: result.promptVersion,
-      greeting: result.greeting,
+      aJoker: result.aJoker,
       association: result.association,
       model: result.model,
       durationMs: result.durationMs,
     });
     console.log(`✓ ${item.name}：真实模型已调用工具并保存`);
   }
-  for (const collection of ["greetings", "adk-sessions"] as const) {
+  for (const collection of ["a-j-oker", "adk-sessions"] as const) {
     assert.ok(
       !JSON.stringify(await service.repo.list(collection)).includes(
         process.env.DEEPSEEK_API_KEY!,

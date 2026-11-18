@@ -20,14 +20,14 @@ try {
   const history = [];
   for (const mode of ["platform", "byok", "external"] as const) {
     const requestId = randomUUID();
-    const greeting = `合成 ${mode} 历史产物，用于确认关闭外部入口后本人仍可管理既有记录。`;
-    const row = await payload.create({ collection: "greetings", overrideAccess: true, data: {
+    const aJoker = `合成 ${mode} 历史产物，用于确认关闭外部入口后本人仍可管理既有记录。`;
+    const row = await payload.create({ collection: "a-j-oker", overrideAccess: true, data: {
       owner, sessionId: session.id, requestKey: `${owner}:${requestId}`, fingerprint: `synthetic-http-history:${requestId}`,
-      mode, status: "completed", input: { text: `合成 ${mode} 历史输入`, mediaIds: [] }, greeting,
+      mode, status: "completed", input: { text: `合成 ${mode} 历史输入`, mediaIds: [] }, aJoker,
       association: "隔离 HTTP 测试预置记录，并非真实模型回答或安全评测结论。",
       model: "synthetic-http-fixture-not-a-model", promptVersion: "synthetic-http-history-v1",
     } });
-    history.push({ id: row.id, requestId, mode, greeting });
+    history.push({ id: row.id, requestId, mode, aJoker });
   }
   const legacyToken = randomBytes(32).toString("base64url");
   await payload.create({ collection: "credentials", overrideAccess: true, data: {

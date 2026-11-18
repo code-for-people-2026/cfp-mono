@@ -62,7 +62,7 @@ it("微信禁用动态函数仍可经 AG-UI 接收单个表单作品，查询确
     input,
     status: "completed",
     mode: "platform",
-    greeting: "已接着回应",
+    aJoker: "已接着回应",
     createdAt: "2026-10-11",
     artifacts,
   };

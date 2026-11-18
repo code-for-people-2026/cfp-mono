@@ -12,7 +12,7 @@ import {
 import { Repository } from "../cms/repository";
 import { AppError } from "../domain/contracts";
 
-// ADK 执行会话属于一个生成轮次；产品祝福会话由 sessions / greetings 管理。
+// ADK 执行会话属于一个生成轮次；产品祝福会话由 sessions / a-j-oker 管理。
 // 避免再引入 ADK DatabaseSessionService 的第二套 ORM 与数据库。
 export class PayloadSessionService extends BaseSessionService {
   constructor(private repo: Repository) {

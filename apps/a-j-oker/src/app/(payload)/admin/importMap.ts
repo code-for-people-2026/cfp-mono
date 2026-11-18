@@ -2,7 +2,7 @@ import { OperationsListTools, OperationsDocumentActions } from "../../../operati
 import { CollectionCards } from "@payloadcms/next/rsc";
 import {
   InputCell,
-  GreetingCell,
+  AJokerCell,
   ExecutionCell,
   MediaCell,
   RecommendedColumns,
@@ -18,7 +18,7 @@ export const importMap = {
   "/src/cms/knowledge-fields#KnowledgeConnectionTest": KnowledgeConnectionTest,
   "@payloadcms/next/rsc#CollectionCards": CollectionCards,
   "/src/cms/admin-cells#InputCell": InputCell,
-  "/src/cms/admin-cells#GreetingCell": GreetingCell,
+  "/src/cms/admin-cells#AJokerCell": AJokerCell,
   "/src/cms/admin-cells#ExecutionCell": ExecutionCell,
   "/src/cms/admin-cells#MediaCell": MediaCell,
   "/src/cms/admin-cells#RecommendedColumns": RecommendedColumns,

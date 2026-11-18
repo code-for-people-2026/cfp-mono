@@ -20,7 +20,7 @@ try {
   const status = await (await call("/api/hello/age", login.token)).json();
   assert.equal(status.loggedIn, true);
   assert.equal(status.configuration.previewOnly, true);
-  for (const route of ["sessions", "greet", "upload", "ag-ui", "token", "age/submit", "privacy/consent"]) assert.equal((await call(`/api/hello/${route}`, login.token, {})).status, 503, route);
+  for (const route of ["sessions", "a-j-oker", "upload", "ag-ui", "token", "age/submit", "privacy/consent"]) assert.equal((await call(`/api/hello/${route}`, login.token, {})).status, 503, route);
   const adult = await call("/api/hello/age/challenge", login.token, { declaration: "adult", consent: true, noticeVersion: ageNotice().version });
   const adultResult = await adult.json();
   assert.equal(adultResult.status.allowed, false);
@@ -44,7 +44,7 @@ try {
     const result = await (await call("/api/hello/age/submit", login.token, { challenge: correction.challenge, name: "隔离测试", idCard })).json();
     assert.equal(result.state, "adult"); assert.equal(result.declaration, "adult"); assert.equal(result.allowed, false);
     assert.equal((await (await call("/api/hello/age", login.token)).json()).allowed, false);
-    assert.equal((await call("/api/hello/greet", login.token, {})).status, 503);
+    assert.equal((await call("/api/hello/a-j-oker", login.token, {})).status, 503);
     const data = await (await call("/api/hello/privacy/export", login.token)).json();
     assert.equal(data.ageVerification.source, "aliyun_id2_meta_name_id");
     assert.ok(!JSON.stringify(data).includes(idCard));

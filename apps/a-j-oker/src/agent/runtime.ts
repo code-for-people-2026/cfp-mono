@@ -5,9 +5,9 @@ import type { GeneratedImage } from "../images/service";
 import { Runner, FunctionTool, type BaseLlm, type RunAsyncToolRequest } from "@google/adk";
 import type { Part } from "@google/genai";
 import { Repository } from "../cms/repository";
-import { AppError, ContentReviewError, ServiceProblemError, type GenerationProgress, type Greeting, type Inspiration } from "../domain/contracts";
+import { AppError, ContentReviewError, ServiceProblemError, type GenerationProgress, type AJoker, type Inspiration } from "../domain/contracts";
 import { loadAgentConfiguration } from "./configuration";
-import { createGreetingAgent } from "./coordinator";
+import { createAJokerAgent } from "./coordinator";
 import { createPsychologyTeam } from "./psychology-agents";
 import type { SpecialistState } from "./specialist-state";
 import { PayloadSessionService } from "./payload-session-service";
@@ -28,14 +28,14 @@ import {
   loadA2AFaultPolicy,
 } from "./devtools-faults";
 
-import type { Greeting as GreetingRecord } from "../payload-types";
+import type { AJoker as AJokerRecord } from "../payload-types";
 
 // Require a completed decision step, not parallel allow/refuse and generation.
 class ImageGenerationTool extends FunctionTool<typeof imageRequestSchema> {
   override async runAsync(request: RunAsyncToolRequest) {
     const event = request.toolContext.invocationContext.session.events.findLast(event =>
       event.content?.parts?.some(part => part.functionCall?.id === request.toolContext.functionCallId));
-    if (event?.content?.parts?.some(part => ["decide_image_request", "save_greeting"].includes(part.functionCall?.name || ""))) {
+    if (event?.content?.parts?.some(part => ["decide_image_request", "save_a_j_oker"].includes(part.functionCall?.name || ""))) {
       return { error: "生图必须在原始请求判断完成之后单独调用，不能与判断或保存回复并行。" };
     }
     return super.runAsync(request);
@@ -49,7 +49,7 @@ export type GenerationRequest = {
   apiKey: string;
   model: string;
   readImage: (id: number) => Promise<{ bytes: Buffer; mimeType: string }>;
-  save: (greeting: Greeting, specialist?: SpecialistState) => Promise<GreetingRecord>;
+  save: (aJoker: AJoker, specialist?: SpecialistState) => Promise<AJokerRecord>;
   generateImage?: (input: ImageRequest, signal: AbortSignal) => Promise<GeneratedImage>;
   existingImage?: GeneratedImage;
   resumingImage?: boolean;
@@ -65,7 +65,7 @@ export type GenerationRequest = {
 export type Generator = (request: GenerationRequest) => Promise<void>;
 
 // 测试可注入脚本模型；运行环境没有“伪模型”开关，不会把假回复当真实生成。
-export async function runGreeting(
+export async function runAJoker(
   request: GenerationRequest,
   modelOverride?: BaseLlm,
 ) {
@@ -162,7 +162,7 @@ export async function runGreeting(
   }) : undefined;
   const imageTool = imageToolsEnabled ? new ImageGenerationTool({
     name: "generate_image",
-    description: "根据当前用户明确的图片需求调用万相文生图，一轮最多一张。输入只包含必要的画面描述；不支持修改上传原图。结果为已审核并保存的媒体编号，随后必须用 save_greeting 将它作为 image 回应作品。",
+    description: "根据当前用户明确的图片需求调用万相文生图，一轮最多一张。输入只包含必要的画面描述；不支持修改上传原图。结果为已审核并保存的媒体编号，随后必须用 save_a_j_oker 将它作为 image 回应作品。",
     parameters: imageRequestSchema,
     execute: async (input) => {
       if (!imageAdmitted) {
@@ -229,7 +229,7 @@ ${imagePromptConstraints()}`;
     const current = configuration.specialists.find((item) => item.approach === active.expertId);
     if (!current) {
       await request.save({
-        greeting: "该专家配置当前已停用；本轮任务已明确结束，未生成专家方案。可继续由阿 J 回应，之后可在专家重新启用后再试。",
+        aJoker: "该专家配置当前已停用；本轮任务已明确结束，未生成专家方案。可继续由阿 J 回应，之后可在专家重新启用后再试。",
         association: "专家配置停用；系统明确结束交接，未伪装成专家完成。",
         approach: "supportive",
         artifacts: [],
@@ -297,7 +297,7 @@ ${imagePromptConstraints()}`;
       clearTimeout(timer);
     }
   }
-  const agent = createGreetingAgent({
+  const agent = createAJokerAgent({
     imageTool,
     imageDecisionTool,
     model,
@@ -336,12 +336,12 @@ ${imagePromptConstraints()}`;
       || restCardDeliveryError(imageAdmitted, value, generatedMediaId, imageDecision.refused),
     save: async (value, specialist) => {
       if (generatedMediaId && !imageDecision.refused)
-        value = { ...value, greeting: "心理支持图片已生成，可查看下方图片。", association: "根据本轮明确的心理支持制图需求生成图片；制图素材不代表已核实的本人状态或已执行的设置变更。" };
+        value = { ...value, aJoker: "心理支持图片已生成，可查看下方图片。", association: "根据本轮明确的心理支持制图需求生成图片；制图素材不代表已核实的本人状态或已执行的设置变更。" };
       if (!imageAdmitted && value.artifacts?.some(a => a.kind === "image")) {
         imageDecision.record({ decision: "refuse", reason: "未明确请求范围内的心理支持图片" });
       }
       if (imageInFlight) await imageInFlight;
-      try { return await request.save(imageDecision.refused ? { ...value, greeting: "抱歉，这个图片请求不能执行，本次不会生成图片。", association: "原始图片请求已拒绝，不生成替代作品。", artifacts: [] } : value, specialist); }
+      try { return await request.save(imageDecision.refused ? { ...value, aJoker: "抱歉，这个图片请求不能执行，本次不会生成图片。", association: "原始图片请求已拒绝，不生成替代作品。", artifacts: [] } : value, specialist); }
       catch (error) {
         if (
           error instanceof ContentReviewError

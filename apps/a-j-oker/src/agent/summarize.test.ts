@@ -15,7 +15,7 @@ const complete = vi.mocked(completeDeepSeek);
 const request = {
   summary: "旧摘要",
   turns: [
-    { id: 1, input: { text: "叫我小李", mediaIds: [] }, greeting: "好的" },
+    { id: 1, input: { text: "叫我小李", mediaIds: [] }, aJoker: "好的" },
   ],
   apiKey: "test-only-key",
 };

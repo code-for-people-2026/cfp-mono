@@ -12,13 +12,13 @@ export const collectionViews: Record<
     description:
       "一段聊天对应一份祝福会话。平台、BYOK 和自带 Agent 的产物可归入同一会话；具体输入和回复请看「生成轮次与吉祥话」。",
   },
-  greetings: {
+  "a-j-oker": {
     group: "业务验收",
-    useAsTitle: "greeting",
-    listSearchableFields: ["greeting", "association"],
+    useAsTitle: "aJoker",
+    listSearchableFields: ["aJoker", "association"],
     defaultColumns: [
       "input",
-      "greeting",
+      "aJoker",
       "status",
       "mode",
       "model",

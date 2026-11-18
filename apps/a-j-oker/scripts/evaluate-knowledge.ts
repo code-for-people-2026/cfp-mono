@@ -17,7 +17,7 @@ process.env.HELLO_ADMIN_BOOTSTRAP = "false";
 process.env.PAYLOAD_SECRET ||= "isolated-knowledge-evaluation-only";
 const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
-const { GreetingService } = await import("../src/domain/greetings");
+const { AJokerService } = await import("../src/domain/a-j-oker");
 const { readTurnKnowledge } = await import("../src/agent/knowledge-evidence");
 const payload = await cms();
 const results: unknown[] = [];
@@ -71,7 +71,7 @@ try {
     },
   });
   const repo = new Repository(payload, { id: randomUUID(), auth: "cookie" });
-  const service = new GreetingService(repo);
+  const service = new AJokerService(repo);
   const prompts = [
     "虚构测试：开会说错数字，我已经更正，却想着同事肯定觉得我很差。请用 CBT 自动思维记录回应，给一个可以填写的简短表单；如果参考资料提供记录卡名称，请保留卡名。",
     "虚构测试：朋友一天没有回消息，我猜他讨厌我，但并没有其他证据。请用 CBT 自动思维视角帮我区分事实和猜测，给简短卡片。",
@@ -93,7 +93,7 @@ try {
         `知识对照：${condition} ${index + 1}`,
       );
       try {
-        const row = await service.generateGreeting({
+        const row = await service.generateAJoker({
           sessionId: session.id,
           requestId: randomUUID(),
           mode: "platform",
@@ -122,7 +122,7 @@ try {
         results.push({
           ...metrics,
           input,
-          greeting: row.greeting,
+          aJoker: row.aJoker,
           artifacts: row.artifacts,
           evidence,
         });
@@ -130,7 +130,7 @@ try {
           assert.ok(metrics.cited > 0, "专家应该声明使用可读的验收卡");
           assert.ok(
             JSON.stringify({
-              greeting: row.greeting,
+              aJoker: row.aJoker,
               artifacts: row.artifacts,
             }).includes("KBT-731"),
             "最终产物应体现独特验收标记",

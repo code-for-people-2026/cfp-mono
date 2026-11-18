@@ -4,11 +4,11 @@ import { Repository } from "../cms/repository";
 import { PrivacyService } from "./service";
 import { AppError } from "../domain/contracts";
 
-function fixture(imageCount = 0, greetingCount = 0) {
+function fixture(imageCount = 0, aJokerCount = 0) {
   const find = vi.fn(async ({ collection, where }: { collection: string; where?: { and?: { id?: { greater_than: number } }[] } }) => {
     const cursor = where?.and?.find((item) => item.id)?.id?.greater_than || 0;
     if (collection === "media" && cursor < imageCount) return { docs: [{ id: cursor + 1, createdAt: "2026-10-13" }] };
-    if (collection === "greetings" && cursor < greetingCount) return { docs: [{ id: cursor + 1, mode: "external", status: "completed", greeting: "合成回复", fingerprint: "test" }] };
+    if (collection === "a-j-oker" && cursor < aJokerCount) return { docs: [{ id: cursor + 1, mode: "external", status: "completed", aJoker: "合成回复", fingerprint: "test" }] };
     if (collection === "credentials" && cursor < 1) return { docs: [{ id: 1, kind: "cookie", expiresAt: "2030-01-01", createdAt: "2026-10-13", digest: "must-not-export" }] };
     return { docs: [] };
   });
@@ -30,7 +30,7 @@ it("小导出仍完整保留本人数据与来源，不泄露凭证摘要", asyn
   const { service, read } = fixture(1, 1);
   read.mockResolvedValue({ bytes: Buffer.from("test-pixels"), mimeType: "image/jpeg" });
   const result = await service.exportData();
-  expect(result.records.greetings).toEqual([expect.objectContaining({ aiLabel: "AI 生成（外部客户端声明）" })]);
+  expect(result.records["a-j-oker"]).toEqual([expect.objectContaining({ aiLabel: "AI 生成（外部客户端声明）" })]);
   expect(result.media[0].base64).toBe(Buffer.from("test-pixels").toString("base64"));
   expect(result.credentials).toHaveLength(1);
   expect(JSON.stringify(result)).not.toContain("must-not-export");
@@ -38,7 +38,7 @@ it("小导出仍完整保留本人数据与来源，不泄露凭证摘要", asyn
 it("大量小记录同样受数量上限保护，超限不会返回部分导出", async () => {
   const { service, find } = fixture(0, 5000);
   await expect(service.exportData()).rejects.toMatchObject({ status: 413 });
-  expect(find.mock.calls.filter(([options]) => options.collection === "greetings")).toHaveLength(1001);
+  expect(find.mock.calls.filter(([options]) => options.collection === "a-j-oker")).toHaveLength(1001);
 });
 it("缺失图片只导出说明，其他存储错误不被误报为成功", async () => {
   const { service, read } = fixture(1);
@@ -53,7 +53,7 @@ it("自助导出不读取或泄露内部 ADK 与 A2A 方案/引用快照", async
   const original = find.getMockImplementation()!;
   find.mockImplementation(async (options) => ["adk-sessions", "a2a-execution-tasks", "a2a-request-ledgers"].includes(options.collection) ? { docs: [{ id: 1, createdAt: "2026-10-13", snapshot: { state: { knowledgeContext: { sources: [{ excerpt: "PRIVATE_ADMIN_REFERENCE", signedUrl: "PRIVATE_TEMP_URL" }] } }, events: [{ content: { parts: [{ text: "PRIVATE_TOOL_STATE" }] } }] } }] } : original(options));
   const result = await service.exportData();
-  expect(result.records.greetings).toHaveLength(1);
+  expect(result.records["a-j-oker"]).toHaveLength(1);
   expect(result.records).not.toHaveProperty("adk-sessions");
   expect(result.records).not.toHaveProperty("a2a-execution-tasks");
   expect(result.records).not.toHaveProperty("a2a-request-ledgers");

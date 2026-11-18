@@ -141,7 +141,7 @@ it("回应依据默认是一行入口，完整内容和心理视角放在底部�
         turn: {
           id: 1,
           input: { text: "测试", mediaIds: [] },
-          greeting: "回应",
+          aJoker: "回应",
           status: "completed",
           mode: "platform",
           createdAt: "2026-10-14",

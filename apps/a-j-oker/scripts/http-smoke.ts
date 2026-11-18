@@ -6,7 +6,7 @@ import { sessionSchema, privacyPolicySchema, privacyStatusSchema, deletionSchema
 if (process.env.HELLO_HTTP_ISOLATED !== "true" || !process.env.HELLO_HTTP_FIXTURES) throw new Error("HTTP 检查仅允许由 e2e 脚本启动的隔离测试库");
 const fixtures = JSON.parse(process.env.HELLO_HTTP_FIXTURES) as {
   cookie: string; native: { token: string; expiresAt: string }; otherCookie: string;
-  historySessionId: number; history: { id: number; requestId: string; mode: string; greeting: string }[]; legacyToken: string;
+  historySessionId: number; history: { id: number; requestId: string; mode: string; aJoker: string }[]; legacyToken: string;
 };
 const origin = process.env.HELLO_ORIGIN || "http://127.0.0.1:3310";
 // 只在脚本自己建立的隔离实例尝试注册，避免在用户已开放注册的本地库创建测试管理员。
@@ -156,7 +156,7 @@ for (const method of ["GET", "POST", "DELETE"]) {
 assert.equal((await fetch(`${origin}/api/hello/sessions`, { headers: legacyHeaders })).status, 403);
 assert.equal((await fetch(`${origin}/api/hello/privacy/export`, { headers: legacyHeaders })).status, 403);
 for (const mode of ["byok", "external"]) {
-  assert.equal((await post("greet", {
+  assert.equal((await post("a-j-oker", {
     sessionId: session.id, requestId: randomUUID(), mode,
     input: { text: "外部入口关闭检查", mediaIds: [] },
     ...(mode === "byok" ? { apiKey: "synthetic-test-key-not-real" } : {}),
@@ -169,7 +169,7 @@ for (const expected of fixtures.history) {
   const row = history.find((item) => item.id === expected.id);
   assert.ok(row);
   assert.equal(row.mode, expected.mode);
-  assert.equal(row.greeting, expected.greeting);
+  assert.equal(row.aJoker, expected.aJoker);
   const statusPath = `${historyPath}/requests/${expected.requestId}`;
   const status = await fetch(statusPath, { headers: { Cookie: cookie } });
   assert.equal(status.status, 200);
@@ -188,10 +188,10 @@ assert.equal((await post("context/ad-start", { sessionId: session.id })).status,
 assert.equal((await post("context/compact", { sessionId: fixtures.historySessionId, rewardId: randomUUID() })).status, 403);
 assert.equal((await post("context/preview-compact", { sessionId: fixtures.historySessionId, requestId: randomUUID(), revision: 0 })).status, 403);
 assert.equal((await fetch(`${origin}/api/hello/media/1`)).status, 401);
-assert.equal((await fetch(`${origin}/api/hello/greet`, {
+assert.equal((await fetch(`${origin}/api/hello/a-j-oker`, {
   method: "POST", headers: { Cookie: cookie, Origin: "https://evil.example" },
 })).status, 403);
-const cmsRows = await fetch(`${origin}/api/greetings`);
+const cmsRows = await fetch(`${origin}/api/a-j-oker`);
 assert.ok([401, 403].includes(cmsRows.status));
 assert.equal((await fetch(historyPath, { headers: { Cookie: fixtures.otherCookie } })).status, 404);
 assert.equal((await fetch(memoryPath, { headers: { Cookie: fixtures.otherCookie } })).status, 404);
@@ -204,7 +204,7 @@ assert.equal((await fetch(`${origin}/api/hello/sessions`, { headers: { Cookie: f
   "撤销外部令牌不能撤销本人凭证");
 const exported = await fetch(`${origin}/api/hello/privacy/export`, { headers: { Cookie: cookie } });
 assert.equal(exported.status, 200);
-const exportedRows = (await exported.json()).records.greetings;
+const exportedRows = (await exported.json()).records["a-j-oker"];
 assert.equal(exportedRows.length, fixtures.history.length);
 assert.deepEqual(exportedRows.map((row: { mode: string }) => row.mode).sort(), ["byok", "external", "platform"]);
 assert.equal((await post("privacy/withdraw", {})).status, 200);

@@ -13,7 +13,7 @@ import { assertSessionLease, holdSessionLease, SESSION_LEASE_MS } from "./sessio
 // 认证凭证、管理员与 Payload 内部集合不能通过访客仓库操作。
 export type OwnedCollection = Extract<
   keyof Config["collections"],
-  "sessions" | "greetings" | "media" | "adk-sessions" | "session-locks"
+  "sessions" | "a-j-oker" | "media" | "adk-sessions" | "session-locks"
 >;
 type CreateData<C extends OwnedCollection> = Omit<
   RequiredDataFromCollectionSlug<C>,

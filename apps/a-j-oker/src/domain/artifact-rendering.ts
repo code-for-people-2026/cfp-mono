@@ -16,7 +16,7 @@ export async function readArtifact(
   turnId: number,
   artifactId: string,
 ) {
-  const row = await repo.get("greetings", turnId);
+  const row = await repo.get("a-j-oker", turnId);
   if (row.status !== "completed") throw new AppError(404, "作品尚未完成");
   const id = identifier.parse(artifactId);
   const artifact = artifactsSchema

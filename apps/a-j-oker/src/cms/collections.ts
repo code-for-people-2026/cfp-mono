@@ -40,6 +40,7 @@ const owned = (
   slug: OwnedCollection,
   label: string,
   fields: Field[],
+  options: { typescript?: CollectionConfig["typescript"] } = {},
 ): CollectionConfig => ({
   slug,
   labels: { singular: label, plural: label },
@@ -58,6 +59,7 @@ const owned = (
   },
   hooks: { beforeChange: [guardSessionLease, guardPrivacyWrite, guardAgeWrite, guardSafetyWrite], afterRead: [sensitiveReadAudit] },
   fields: [...ownedFields, ...fields],
+  ...(options.typescript ? { typescript: options.typescript } : {}),
 });
 
 export const collections: CollectionConfig[] = [
@@ -176,7 +178,7 @@ export const collections: CollectionConfig[] = [
       },
     },
   ]),
-  owned("greetings", "生成轮次与吉祥话", [
+  owned("a-j-oker", "生成轮次与吉祥话", [
     {
       name: "sessionId",
       label: "会话 ID",
@@ -229,10 +231,10 @@ export const collections: CollectionConfig[] = [
       admin: { components: { Cell: "/src/cms/admin-cells#InputCell" } },
     },
     {
-      name: "greeting",
+      name: "aJoker",
       label: "吉祥话",
       type: "textarea",
-      admin: { components: { Cell: "/src/cms/admin-cells#GreetingCell" } },
+      admin: { components: { Cell: "/src/cms/admin-cells#AJokerCell" } },
     },
     {
       name: "handoffPreamble",
@@ -275,7 +277,7 @@ export const collections: CollectionConfig[] = [
     { name: "promptVersion", label: "提示词版本", type: "text" },
     { name: "error", label: "安全错误信息", type: "text" },
     { name: "durationMs", label: "耗时（毫秒）", type: "number" },
-  ]),
+  ], { typescript: { interface: "AJoker" } }),
   owned("adk-sessions", "ADK 会话", [
     {
       name: "key",

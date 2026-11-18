@@ -28,7 +28,7 @@ it("大作品不会把最近两轮卡在无法整理的记忆死角，表单答�
   const turns = [1, 2].map((id) =>
     toMemoryTurn({
       id,
-      greeting: "答".repeat(1000),
+      aJoker: "答".repeat(1000),
       input: {
         text: "问".repeat(4000),
         mediaIds: [],
@@ -47,6 +47,6 @@ it("大作品不会把最近两轮卡在无法整理的记忆死角，表单答�
     }),
   );
   expect(turns[0].input).not.toHaveProperty("formResponse");
-  expect(turns[0].greeting).toContain("作品摘要节选");
+  expect(turns[0].aJoker).toContain("作品摘要节选");
   expect(memoryTokens("摘".repeat(900), turns)).toBeLessThan(MEMORY_BUDGET);
 });
