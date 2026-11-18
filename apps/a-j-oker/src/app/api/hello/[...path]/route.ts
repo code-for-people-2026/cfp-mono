@@ -1,7 +1,7 @@
 import { InteractionService } from "../../../../interaction/service";
 import { SERVICE_SCOPE } from "@cfp/a-j-oker-contracts";
 import { requirePlatformInput, rejectExternalConnection } from "../../../../server/service-scope";
-import { publicGreetingState } from "../../../../domain/public-greeting";
+import { publicAJokerState } from "../../../../domain/public-a-j-oker";
 import { OperationsService } from "../../../../operations/service";
 import { imageGenerationConfigured } from "../../../../images/wan";
 import { imageReviewConfigured } from "../../../../operations/image-review";
@@ -16,7 +16,7 @@ import { z } from "zod";
 import { cms } from "../../../../cms/client";
 import { Repository } from "../../../../cms/repository";
 import { AppError, turnSchema } from "../../../../domain/contracts";
-import { GreetingService } from "../../../../domain/greetings";
+import { AJokerService } from "../../../../domain/a-j-oker";
 import { ContextService } from "../../../../domain/context";
 import { adConfiguration } from "../../../../domain/rewarded-ads";
 import { DEFAULT_MODEL } from "../../../../models/deepseek";
@@ -102,7 +102,7 @@ export async function GET(request: Request, context: Context) {
         if (path.length === 1) return json(await readProfile(payload, owner.id));
         if (path.length === 2 && path[1] === "avatar") return avatarResponse(payload, owner.id);
       }
-      const service = new GreetingService(new Repository(payload, owner));
+      const service = new AJokerService(new Repository(payload, owner));
       if (
         ["artifact-image", "artifact-page"].includes(path[0]) &&
         path.length === 3
@@ -112,7 +112,7 @@ export async function GET(request: Request, context: Context) {
           z.coerce.number().int().positive().parse(path[1]),
           path[2],
         );
-        const turn = await service.repo.get("greetings", Number(path[1]));
+        const turn = await service.repo.get("a-j-oker", Number(path[1]));
         const contentId = `${owner.id}:${turn.id}:${turn.fingerprint}:${artifact.id}`;
         const external = turn.mode === "external";
         if (path[0] === "artifact-image" && artifact.kind === "image") {
@@ -282,11 +282,11 @@ export async function POST(request: Request, context: Context) {
       request,
       path[0] === "ag-ui" ? 64 * 1024 : undefined,
     );
-    if (["greet", "context", "image-resume"].includes(path[0])) requirePlatformInput(body);
+    if (["a-j-oker", "context", "image-resume"].includes(path[0])) requirePlatformInput(body);
     return await withAuthenticatedExecution(payload, request, owner, async (owner) => {
       checkClientRequest(request, owner);
       const privacy = privacyService(payload, owner);
-      const service = new GreetingService(new Repository(payload, owner));
+      const service = new AJokerService(new Repository(payload, owner));
       await new AgeService(payload, owner).requireCapability();
       await privacy.require();
       if (owner.auth === "bearer") await privacy.requireExternalAccess();
@@ -296,16 +296,16 @@ export async function POST(request: Request, context: Context) {
         // The stream starts generation before returning its Response. A nested
         // lease keeps revocation excluded until that work finishes or fails,
         // including when the client disconnects.
-        return agentStream({ generateGreeting: (args, progress) => withCredentialExecution(owner.id, () => service.generateGreeting(args, progress)) }, input);
+        return agentStream({ generateAJoker: (args, progress) => withCredentialExecution(owner.id, () => service.generateAJoker(args, progress)) }, input);
       }
     if (path[0] === "image-resume" && path.length === 1) {
       const retry = z.object({ turnId: z.number().int().positive(), requestId: z.string().uuid(), apiKey: z.string().min(10).max(256).optional() }).strict().parse(body);
-      const row = await service.repo.get("greetings", retry.turnId);
+      const row = await service.repo.get("a-j-oker", retry.turnId);
       requirePlatformInput({ mode: row.mode, apiKey: retry.apiKey });
       await privacy.requireInput(row.input);
       const args = turnSchema.parse({ sessionId: row.sessionId, requestId: retry.requestId, input: row.input, mode: row.mode, apiKey: retry.apiKey });
       return agentStream(
-        { generateGreeting: (args, progress) => withCredentialExecution(owner.id, () => service.generateGreeting(args, progress)), resumeImage: (id, key, progress) => withCredentialExecution(owner.id, () => service.resumeImage(id, key, progress)) },
+        { generateAJoker: (args, progress) => withCredentialExecution(owner.id, () => service.generateAJoker(args, progress)), resumeImage: (id, key, progress) => withCredentialExecution(owner.id, () => service.resumeImage(id, key, progress)) },
         {
           ...args,
           a2uiCatalogId: ajCatalogIdForResponseHeader(
@@ -370,9 +370,9 @@ export async function POST(request: Request, context: Context) {
           .parse(body);
         return json(await service.createSession(title));
       }
-      if (path[0] === "greet") {
+      if (path[0] === "a-j-oker") {
         await privacy.requireInput(body);
-        return json(publicGreetingState(await service.generateGreeting(body)));
+        return json(publicAJokerState(await service.generateAJoker(body)));
       }
       if (path[0] === "upload") {
         await privacy.requireImageInput();

@@ -91,7 +91,7 @@ export interface Config {
     admins: Admin;
     credentials: Credential;
     sessions: Session;
-    greetings: Greeting;
+    'a-j-oker': AJoker;
     'adk-sessions': AdkSession;
     'session-locks': SessionLock;
     media: Media;
@@ -126,7 +126,7 @@ export interface Config {
     admins: AdminsSelect<false> | AdminsSelect<true>;
     credentials: CredentialsSelect<false> | CredentialsSelect<true>;
     sessions: SessionsSelect<false> | SessionsSelect<true>;
-    greetings: GreetingsSelect<false> | GreetingsSelect<true>;
+    'a-j-oker': AJOkerSelect<false> | AJOkerSelect<true>;
     'adk-sessions': AdkSessionsSelect<false> | AdkSessionsSelect<true>;
     'session-locks': SessionLocksSelect<false> | SessionLocksSelect<true>;
     media: MediaSelect<false> | MediaSelect<true>;
@@ -760,9 +760,9 @@ export interface Session {
  * 每行是一次输入及其生成结果。先对照输入与吉祥话，再检查状态、使用方式和模型；失败轮次也会保留。点击内容查看完整联想依据、会话 ID 和提示词版本。
  *
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "greetings".
+ * via the `definition` "a-j-oker".
  */
-export interface Greeting {
+export interface AJoker {
   id: number;
   owner: string;
   sessionId: number;
@@ -771,7 +771,7 @@ export interface Greeting {
   mode: 'platform' | 'byok' | 'external';
   status: 'running' | 'completed' | 'failed';
   input: import('@cfp/a-j-oker-contracts').Inspiration;
-  greeting?: string | null;
+  aJoker?: string | null;
   handoffPreamble?: string | null;
   association?: string | null;
   approach?: string | null;
@@ -876,8 +876,8 @@ export interface PayloadLockedDocument {
         value: number | Session;
       } | null)
     | ({
-        relationTo: 'greetings';
-        value: number | Greeting;
+        relationTo: 'a-j-oker';
+        value: number | AJoker;
       } | null)
     | ({
         relationTo: 'adk-sessions';
@@ -1339,9 +1339,9 @@ export interface SessionsSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "greetings_select".
+ * via the `definition` "a-j-oker_select".
  */
-export interface GreetingsSelect<T extends boolean = true> {
+export interface AJOkerSelect<T extends boolean = true> {
   owner?: T;
   sessionId?: T;
   requestKey?: T;
@@ -1349,7 +1349,7 @@ export interface GreetingsSelect<T extends boolean = true> {
   mode?: T;
   status?: T;
   input?: T;
-  greeting?: T;
+  aJoker?: T;
   handoffPreamble?: T;
   association?: T;
   approach?: T;

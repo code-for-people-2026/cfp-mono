@@ -45,8 +45,8 @@ try {
     VALUES (1, 1, ${cbtId}, 'knowledgeBases', 1)`);
   await db.run(sql`INSERT INTO sessions (id, owner, title)
     VALUES (1, 'migration-owner', '迁移前会话')`);
-  await db.run(sql`INSERT INTO greetings
-    (id, owner, session_id, request_key, fingerprint, mode, status, input, greeting)
+  await db.run(sql`INSERT INTO aJokers
+    (id, owner, session_id, request_key, fingerprint, mode, status, input, aJoker)
     VALUES (1, 'migration-owner', 1, 'migration-request', 'fingerprint',
       'platform', 'completed', '"迁移前输入"', '迁移前问候')`);
 
@@ -113,8 +113,8 @@ try {
   assert.deepEqual(cbt.preferredComponents, ["form"]);
   assert.equal((await cbt.knowledge!("迁移", new AbortController().signal)).sources[0].excerpt, "必须保留的参考资料");
   assert.equal(
-    (await payload.findByID({ collection: "greetings", id: 1, overrideAccess: true }))
-      .greeting,
+    (await payload.findByID({ collection: "a-j-oker", id: 1, overrideAccess: true }))
+      .aJoker,
     "迁移前问候",
   );
   assert.deepEqual(await seedAgents(payload), { created: 0, preserved: 9 });

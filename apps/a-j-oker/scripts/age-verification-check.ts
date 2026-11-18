@@ -109,7 +109,7 @@ try {
   assert.equal(browserExchange, false);
   await service.requireAdditionalVerification();
   await assert.rejects(() => new Repository(payload, owner).create("sessions", { title: "追加复核后的迟到写入" }), /年龄核验/);
-  for (const endpoint of ["sessions", "upload", "greet", "ag-ui", "context/compact", "context/ad-start", "token"]) {
+  for (const endpoint of ["sessions", "upload", "a-j-oker", "ag-ui", "context/compact", "context/ad-start", "token"]) {
     assert.equal((await http(linked.token, endpoint.split("/"), {})).status, 403, endpoint);
   }
   assert.equal((await http(bearer, ["sessions"])).status, 403);
@@ -228,7 +228,7 @@ try {
   assert.ok(Math.abs(Date.parse(restoredProfile.expiresAt) - expectedExpiry) < 5_000);
   await directlyRestored.instance.requireCapability();
   const capabilitySession = await payload.create({ collection: "sessions", overrideAccess: true, data: { owner: directlyRestored.subject.owner.id, title: "合成直接恢复会话" } });
-  await payload.create({ collection: "greetings", overrideAccess: true, data: { owner: directlyRestored.subject.owner.id, sessionId: capabilitySession.id, requestKey: randomUUID(), fingerprint: "synthetic-manual-age-write", mode: "platform", status: "completed", input: { text: "合成直接恢复后的实际写入", mediaIds: [] }, greeting: "合成回复", artifacts: [] } });
+  await payload.create({ collection: "a-j-oker", overrideAccess: true, data: { owner: directlyRestored.subject.owner.id, sessionId: capabilitySession.id, requestKey: randomUUID(), fingerprint: "synthetic-manual-age-write", mode: "platform", status: "completed", input: { text: "合成直接恢复后的实际写入", mediaIds: [] }, aJoker: "合成回复", artifacts: [] } });
   await payload.create({ collection: "media", overrideAccess: true, data: { owner: directlyRestored.subject.owner.id, mimeType: "image/png", base64: "c3ludGhldGlj" } });
   const manualAudit = (await payload.find({ collection: "safety-audit", overrideAccess: true, limit: 1, where: { and: [{ event: { equals: "case.restore_age_access" } }, { target: { equals: `case:${directlyRestored.row.id}` } }] } })).docs[0];
   const manualAuditMetadata = manualAudit?.metadata as Record<string, unknown> | undefined;
@@ -239,7 +239,7 @@ try {
   const restrictionCase = await payload.create({ collection: "safety-cases", overrideAccess: true, context: { safetyInternal: true }, data: { owner: directlyRestored.subject.owner.id, receipt: randomUUID(), source: "moderation", status: "resolved", severity: "normal", category: "other", stage: "synthetic_content_restriction", revision: 0, action: "restrict", reason: "合成验证内容限制与年龄限制互相独立" } });
   await payload.create({ collection: "safety-enforcements", overrideAccess: true, context: { safetyInternal: true }, data: { key: `owner:${directlyRestored.subject.owner.id}:${restrictionCase.id}`, owner: directlyRestored.subject.owner.id, targetType: "owner", caseId: restrictionCase.id, active: true, reason: "合成内容限制" } });
   await assert.rejects(() => assertGenerationAllowed(payload, directlyRestored.subject.owner.id), /生成权限/);
-  await assert.rejects(() => payload.create({ collection: "greetings", overrideAccess: true, data: { owner: directlyRestored.subject.owner.id, sessionId: capabilitySession.id, requestKey: randomUUID(), fingerprint: "synthetic-manual-age-content-block", mode: "platform", status: "completed", input: { text: "内容限制仍应独立生效", mediaIds: [] }, greeting: "不应发布", artifacts: [] } }), /内容或身份已受限/);
+  await assert.rejects(() => payload.create({ collection: "a-j-oker", overrideAccess: true, data: { owner: directlyRestored.subject.owner.id, sessionId: capabilitySession.id, requestKey: randomUUID(), fingerprint: "synthetic-manual-age-content-block", mode: "platform", status: "completed", input: { text: "内容限制仍应独立生效", mediaIds: [] }, aJoker: "不应发布", artifacts: [] } }), /内容或身份已受限/);
   console.log("✓ 管理员直接恢复使用人工来源、30天有效期、真实写入门禁，且不解除内容限制");
 
   const lifecycleSubject = await fresh(); let lifecycleProviderCalls = 0;

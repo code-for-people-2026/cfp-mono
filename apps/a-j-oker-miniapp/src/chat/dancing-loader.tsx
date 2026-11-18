@@ -1,5 +1,5 @@
 import { Image, View } from "@tarojs/components";
-import danceSprite from "../assets/aj-dance-24.png";
+import danceSprite from "../assets/aj-dance-stairs-approved.png";
 
 export function DancingLoader() {
   return (

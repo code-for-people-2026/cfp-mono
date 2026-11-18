@@ -61,7 +61,7 @@
 - 另一个终端运行 `pnpm --filter @cfp/a-j-oker-miniapp dev:weapp`，保存 Taro 源码后持续重编译 `dist/weapp/`；开发者工具再编译 / 刷新。
 - 导入路径是 `/Users/sunmer/Documents/cfp-mono/apps/a-j-oker-miniapp`，不是后端目录，也不是 H5 地址。项目不使用微信云开发，Payload / ADK 是独立后端。
 - 当前项目 `urlCheck: true`，真实检查域名。要连接 ECS，必须在同一 AppID 后台把 `https://aj-preview.codeforpeople.cn` 加入 request 和 downloadFile 合法域名。本机 localhost 调试若临时改变设置，不得把这个例外当作体验版验收通过。
-- 在调试器的 Network 查看 `miniapp-identity`、`config`、`sessions`，发送后查看 `greet`；成功响应应为 2xx。Console 看脚本异常，Storage 只应保存设备身份令牌，不能出现 DeepSeek Key。
+- 在调试器的 Network 查看 `miniapp-identity`、`config`、`sessions`，发送后查看 `a-j-oker`；成功响应应为 2xx。Console 看脚本异常，Storage 只应保存设备身份令牌，不能出现 DeepSeek Key。
 - 先发「你叫什么名字」，确认自称阿J；再发「今天面试没过」，检查是否理解失落而非强行祝贺。最后在 CMS 对照输入、输出与 `aj-v2.1`。
 - 开发者工具模拟器和后端在同一台电脑，可以使用默认本地地址；手机扫码预览需另行配置可访问的后端。
 

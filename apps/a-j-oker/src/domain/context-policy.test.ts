@@ -39,7 +39,7 @@ describe("记忆血条与观看资格", () => {
     const turn = {
       id: 1,
       input: { text: "新工作", mediaIds: [] },
-      greeting: "一步一步来",
+      aJoker: "一步一步来",
     };
     expect(
       describeMemory(memorySchema.parse({}), [turn, turn]).canCompact,
@@ -54,7 +54,7 @@ describe("记忆血条与观看资格", () => {
     const turn = {
       id: 1,
       input: { text: "字".repeat(4000), mediaIds: [1, 2, 3] },
-      greeting: "字".repeat(1000),
+      aJoker: "字".repeat(1000),
     };
     const view = describeMemory(
       memorySchema.parse({ summary: "记".repeat(900) }),

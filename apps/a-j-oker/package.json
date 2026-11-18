@@ -17,7 +17,7 @@
     "test:coverage": "vitest run --coverage && pnpm test:integration",
     "test:e2e": "tsx scripts/e2e.ts",
     "test:http": "tsx scripts/http-smoke.ts",
-    "test:integration": "node scripts/image-context-check.mjs && node scripts/preview-data-check.mjs && tsx scripts/integration.ts && tsx scripts/preview-recovery-check.ts && tsx scripts/external-retry-check.ts && tsx scripts/image-storage-check.ts && tsx scripts/oss-storage-check.ts && tsx scripts/image-schema-check.ts && tsx scripts/artifact-check.ts && tsx scripts/platform-quota-check.ts && tsx scripts/privacy-check.ts && tsx scripts/privacy-migration-check.ts && pnpm test:profile && pnpm test:configuration && pnpm test:moderation && pnpm test:operations && pnpm test:images",
+    "test:integration": "node scripts/image-context-check.mjs && node scripts/preview-data-check.mjs && tsx scripts/integration.ts && tsx scripts/preview-recovery-check.ts && tsx scripts/external-retry-check.ts && tsx scripts/image-storage-check.ts && tsx scripts/oss-storage-check.ts && tsx scripts/image-schema-check.ts && tsx scripts/artifact-check.ts && tsx scripts/platform-quota-check.ts && tsx scripts/privacy-check.ts && tsx scripts/privacy-migration-check.ts && node --import tsx scripts/rename-migration-check.ts && pnpm test:profile && pnpm test:configuration && pnpm test:moderation && pnpm test:operations && pnpm test:images",
     "db:images": "tsx scripts/migrate-images.ts",
     "test:external": "tsx scripts/external-smoke.ts",
     "eval": "tsx scripts/evaluate.ts",
@@ -50,6 +50,7 @@
     "alerts:feishu": "tsx scripts/feishu-alerts.ts",
     "test:images:live": "tsx scripts/image-generation-live.ts",
     "test:profile": "tsx scripts/profile-check.ts",
+    "test:rename": "node --import tsx scripts/rename-migration-check.ts",
     "test:interaction": "tsx scripts/semantic-history-check.ts && tsx scripts/interaction-check.ts && tsx scripts/moderation-semantic-preservation-check.ts && tsx scripts/product-guidance-check.ts"
   },
   "dependencies": {

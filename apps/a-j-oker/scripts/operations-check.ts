@@ -15,7 +15,7 @@ process.env.HELLO_MEDIA_STORAGE = "database";
 process.env.DEEPSEEK_API_KEY = "test-only-no-network";
 const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
-const { GreetingService } = await import("../src/domain/greetings");
+const { AJokerService } = await import("../src/domain/a-j-oker");
 const { ContextService } = await import("../src/domain/context");
 const { readArtifact } = await import("../src/domain/artifact-rendering");
 const { OperationsService, transaction } = await import("../src/operations/service");
@@ -33,7 +33,7 @@ try {
   const auditor = { ...await payload.create({ collection: "admins", overrideAccess: false, user: administrator, data: { email: "audit@ops.example", password: "isolated-test-pass-123", role: "auditor" } }), collection: "admins" as const };
   assert.equal((await payload.findByID({ collection: "admins", id: administrator.id, overrideAccess: true })).role, "administrator");
   await assert.rejects(() => payload.update({ collection: "admins", id: reviewer.id, overrideAccess: false, user: reviewer, data: { role: "administrator" } }));
-  await assert.rejects(() => payload.find({ collection: "greetings", overrideAccess: false, user: reviewer }));
+  await assert.rejects(() => payload.find({ collection: "a-j-oker", overrideAccess: false, user: reviewer }));
   for (const collection of ["agent-configs", "knowledge-bases"] as const) await assert.rejects(() => payload.find({ collection, overrideAccess: false, user: reviewer }));
   await assert.rejects(() => payload.find({ collection: "safety-evidence", overrideAccess: false, user: administrator }));
   pass("角色权限：审核员不能升权/读原始聊天，管理员不能从通用接口读受限证据");
@@ -64,12 +64,12 @@ try {
   pass("未生成内容可维持拒绝并反馈；保留自动审核原判、不封禁身份，审计失败回滚");
   const owner = { id: randomUUID(), auth: "cookie" as const }, other = { id: randomUUID(), auth: "cookie" as const };
   const repo = new Repository(payload, owner);
-  const service = new GreetingService(repo, async (args) => { await args.save({ greeting: "合成内容：愿你今晚安稳休息", association: "测试关照", artifacts: [{ kind: "page", id: "page1", title: "测试页面", sections: [{ heading: "小步骤", body: "休息" }] }] }); }, undefined, undefined, { moderate: syntheticTextReview, imageReviewer: async () => ({ decision: "allow", category: "test", version: "mock-pixels-test-only" }) });
+  const service = new AJokerService(repo, async (args) => { await args.save({ aJoker: "合成内容：愿你今晚安稳休息", association: "测试关照", artifacts: [{ kind: "page", id: "page1", title: "测试页面", sections: [{ heading: "小步骤", body: "休息" }] }] }); }, undefined, undefined, { moderate: syntheticTextReview, imageReviewer: async () => ({ decision: "allow", category: "test", version: "mock-pixels-test-only" }) });
   const session = await service.createSession();
   const media = await service.upload(await sharp({ create: { width: 8, height: 8, channels: 3, background: "red" } }).png().toBuffer());
-  const turn = await service.generateGreeting({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "合成输入", mediaIds: [media.id] } });
+  const turn = await service.generateAJoker({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "合成输入", mediaIds: [media.id] } });
   const sharedSession = await service.createSession("复用同一图片的另一个会话");
-  const sharedTurn = await service.generateGreeting({ sessionId: sharedSession.id, requestId: randomUUID(), mode: "platform", input: { text: "合成图片复用", mediaIds: [media.id] } });
+  const sharedTurn = await service.generateAJoker({ sessionId: sharedSession.id, requestId: randomUUID(), mode: "platform", input: { text: "合成图片复用", mediaIds: [media.id] } });
   const unrelatedSession = await service.createSession("未受影响的会话");
   const receipt = await ops.complain(owner, { category: "other", description: "合成举报内容用于测试运营闭环", turnId: turn.id });
   const list = await ops.queue(reviewer, { status: "pending" }); const row = list.find((r) => r.receipt === receipt.receipt)!;
@@ -92,28 +92,28 @@ try {
   await repo.update("sessions", session.id, { memory: { compressions: 0, summary: "包含合成被隔离内容的摘要", throughId: turn.id, revision: 1 } });
   await payload.db.drizzle.run(sql`CREATE TRIGGER test_audit_failure BEFORE INSERT ON safety_audit WHEN NEW.event = 'case.quarantine' BEGIN SELECT RAISE(ABORT, 'synthetic audit failure'); END`);
   await assert.rejects(() => ops.action(reviewer, Number(row.id), { revision: 1, action: "quarantine", reason: "验证审计写入失败会回滚业务处置" }));
-  assert.equal((await service.history(session.id))[0].greeting, turn.greeting);
+  assert.equal((await service.history(session.id))[0].aJoker, turn.aJoker);
   assert.equal((await payload.findByID({ collection: "safety-cases", id: row.id, overrideAccess: true })).revision, 1);
   await payload.db.drizzle.run(sql`DROP TRIGGER test_audit_failure`);
   pass("审计写入故障时，案件状态与隔离处置原子回滚");
   await ops.action(reviewer, Number(row.id), { revision: 1, action: "quarantine", reason: "合成案件验证隔离所有读取入口", reply: "已停止展示该轮内容，可申请独立复核。" });
   const hidden = (await service.history(session.id))[0];
   assert.equal((await service.history(sharedSession.id))[0].visibility, "quarantined");
-  assert.equal(hidden.visibility, "quarantined"); assert.equal(hidden.greeting, null);
+  assert.equal(hidden.visibility, "quarantined"); assert.equal(hidden.aJoker, null);
   assert.equal((await repo.get("sessions", session.id)).title, "内容复核中的会话");
   assert.equal((await repo.get("sessions", sharedSession.id)).title, "内容复核中的会话");
   assert.equal((await repo.get("sessions", unrelatedSession.id)).title, "未受影响的会话");
-  assert.equal((await service.submission(session.id, String(turn.requestKey).split(":").at(-1)!)).turn?.greeting, null);
+  assert.equal((await service.submission(session.id, String(turn.requestKey).split(":").at(-1)!)).turn?.aJoker, null);
   await assert.rejects(() => readArtifact(repo, turn.id, "page1"));
   await assert.rejects(() => service.media.read(media.id), { status: 404 });
   const memory = await new ContextService(repo).modelContext(session.id);
   assert.ok(!memory.memory.includes("被隔离")); assert.equal(memory.previous.length, 0);
-  const raw = await payload.findByID({ collection: "greetings", id: turn.id, overrideAccess: true });
-  assert.equal(raw.greeting, turn.greeting);
+  const raw = await payload.findByID({ collection: "a-j-oker", id: turn.id, overrideAccess: true });
+  assert.equal(raw.aJoker, turn.aJoker);
   await assert.rejects(() => repo.update("sessions", session.id, { memory: { compressions: 1, summary: "试图重新保存隔离内容", throughId: turn.id, revision: 2 } }), { status: 403 });
-  await service.generateGreeting({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "隔离后仍可继续正常对话" } });
+  await service.generateAJoker({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "隔离后仍可继续正常对话" } });
   assert.equal((await payload.findByID({ collection: "sessions", id: session.id, overrideAccess: true })).title, "合成输入");
-  await assert.rejects(() => payload.update({ collection: "greetings", id: turn.id, overrideAccess: true, data: { owner: owner.id, status: "completed", greeting: "试图绕过隔离发布" } }), { status: 403 });
+  await assert.rejects(() => payload.update({ collection: "a-j-oker", id: turn.id, overrideAccess: true, data: { owner: owner.id, status: "completed", aJoker: "试图绕过隔离发布" } }), { status: 403 });
   pass("隔离覆盖历史/请求恢复/作品/图片/模型记忆/会话标题，继续对话不改写原名，并阻断并发再发布");
   const appeal = await ops.complain(owner, { kind: "appeal", parentReceipt: receipt.receipt, category: "other", description: "这是正常帮助内容，请由其他人员复核" });
   const appealRow = (await ops.queue(reviewer, {})).find((r) => r.receipt === appeal.receipt)!;
@@ -122,8 +122,8 @@ try {
   await ops.action(reviewer, Number(appealRow.id), { revision: 1, action: "review", reason: "转交给另一名审核员独立复核" });
   await ops.action(reviewer2, Number(appealRow.id), { revision: 2, action: "claim", reason: "独立领取该申诉并验证原处置" });
   await ops.action(reviewer2, Number(appealRow.id), { revision: 3, action: "restore", reason: "合成测试确认内容无害恢复展示", reply: "复核后已恢复原内容展示。" });
-  assert.equal((await service.history(session.id))[0].greeting, turn.greeting);
-  assert.equal((await service.history(sharedSession.id))[0].greeting, sharedTurn.greeting);
+  assert.equal((await service.history(session.id))[0].aJoker, turn.aJoker);
+  assert.equal((await service.history(sharedSession.id))[0].aJoker, sharedTurn.aJoker);
   assert.equal((await repo.get("sessions", session.id)).title, "合成输入");
   assert.equal((await repo.get("sessions", sharedSession.id)).title, "复用同一图片的另一个会话");
   assert.equal((await ops.mine(owner, String(appeal.receipt)))[0].reply, "复核后已恢复原内容展示。");
@@ -131,7 +131,7 @@ try {
   const raceOwner = { id: randomUUID(), auth: "cookie" as const };
   const raceRepo = new Repository(payload, raceOwner);
   let duringOutputReview = async () => {};
-  const raceService = new GreetingService(raceRepo, undefined, undefined, undefined, {
+  const raceService = new AJokerService(raceRepo, undefined, undefined, undefined, {
     moderate: async (request) => {
       if (request.purpose === "image_generation") return imageReview(true);
       if (request.stage === "output") {
@@ -144,23 +144,23 @@ try {
   });
   const raceMedia = await raceService.upload(await sharp({ create: { width: 8, height: 8, channels: 3, background: "green" } }).png().toBuffer());
   const sourceSession = await raceService.createSession();
-  const sourceTurn = await raceService.acceptExternal({ sessionId: sourceSession.id, requestId: randomUUID(), model: "synthetic-race-check", input: { text: "共享图片来源", mediaIds: [raceMedia.id] }, output: { greeting: "图片来源回应", association: "合成内容" } });
+  const sourceTurn = await raceService.acceptExternal({ sessionId: sourceSession.id, requestId: randomUUID(), model: "synthetic-race-check", input: { text: "共享图片来源", mediaIds: [raceMedia.id] }, output: { aJoker: "图片来源回应", association: "合成内容" } });
   const sharedComplaint = await ops.complain(raceOwner, { category: "other", description: "隔离共享图片的并发发布验证", turnId: sourceTurn.id });
   const sharedCase = (await ops.queue(administrator, {})).find((r) => r.receipt === sharedComplaint.receipt)!;
   await ops.action(reviewer, Number(sharedCase.id), { revision: 0, action: "claim", reason: "领取共享图片并发隔离测试案件" });
   duringOutputReview = async () => { await ops.action(reviewer, Number(sharedCase.id), { revision: 1, action: "quarantine", reason: "在输出审核等待期间隔离共享图片" }); };
   const racingSession = await raceService.createSession();
-  await assert.rejects(() => raceService.acceptExternal({ sessionId: racingSession.id, requestId: randomUUID(), model: "synthetic-race-check", input: { text: "制作休息提醒卡，引用同图" }, output: { greeting: "不得回传的待审回应", association: "合成内容", artifacts: [{ kind: "image", id: "shared_image", title: "共享图片", alt: "合成测试图片", source: { type: "media", mediaId: raceMedia.id } }] } }), { status: 403 });
-  const rejected = (await payload.find({ collection: "greetings", overrideAccess: true, where: { sessionId: { equals: racingSession.id } } })).docs[0];
+  await assert.rejects(() => raceService.acceptExternal({ sessionId: racingSession.id, requestId: randomUUID(), model: "synthetic-race-check", input: { text: "制作休息提醒卡，引用同图" }, output: { aJoker: "不得回传的待审回应", association: "合成内容", artifacts: [{ kind: "image", id: "shared_image", title: "共享图片", alt: "合成测试图片", source: { type: "media", mediaId: raceMedia.id } }] } }), { status: 403 });
+  const rejected = (await payload.find({ collection: "a-j-oker", overrideAccess: true, where: { sessionId: { equals: racingSession.id } } })).docs[0];
   assert.equal(rejected.status, "failed");
-  assert.ok(!rejected.greeting && !rejected.artifacts);
+  assert.ok(!rejected.aJoker && !rejected.artifacts);
   pass("输出审核期间另一轮隔离共享图片，外部保存的事务守卫拒绝发布及回传");
 
   const textOwner = { id: randomUUID(), auth: "cookie" as const };
   const textRepo = new Repository(payload, textOwner);
-  const textService = new GreetingService(textRepo, undefined, undefined, undefined, { moderate: syntheticTextReview });
+  const textService = new AJokerService(textRepo, undefined, undefined, undefined, { moderate: syntheticTextReview });
   const textSession = await textService.createSession();
-  const textTurn = await textService.acceptExternal({ sessionId: textSession.id, requestId: randomUUID(), model: "synthetic-memory-check", input: { text: "纯文本隔离来源" }, output: { greeting: "合成文本", association: "合成内容" } });
+  const textTurn = await textService.acceptExternal({ sessionId: textSession.id, requestId: randomUUID(), model: "synthetic-memory-check", input: { text: "纯文本隔离来源" }, output: { aJoker: "合成文本", association: "合成内容" } });
   const textComplaint = await ops.complain(textOwner, { category: "other", description: "纯文本隔离不影响其他会话记忆", turnId: textTurn.id });
   const textCase = (await ops.queue(administrator, {})).find((r) => r.receipt === textComplaint.receipt)!;
   await ops.action(reviewer, Number(textCase.id), { revision: 0, action: "claim", reason: "领取纯文本记忆隔离测试案件" });
@@ -182,7 +182,7 @@ try {
   await assert.rejects(() => ops.action(reviewer, Number(restrictionRow.id), { revision: 1, action: "restrict", reason: "审核员试图直接限制用户生成" }), { status: 403 });
   await ops.action(administrator, Number(restrictionRow.id), { revision: 1, action: "claim", reason: "管理员领取需要限制生成的案件" });
   await ops.action(administrator, Number(restrictionRow.id), { revision: 2, action: "restrict", reason: "隔离测试验证限制生成实际生效" });
-  await assert.rejects(() => service.generateGreeting({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "普通输入" } }), { status: 403 });
+  await assert.rejects(() => service.generateAJoker({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "普通输入" } }), { status: 403 });
   assert.ok((await ops.mine(owner)).length);
   pass("限制仅管理员可执行，业务生成被拒，仍允许本人投诉查询");
   const rules = new RulesService(payload);
@@ -193,7 +193,7 @@ try {
   pass("规则版本不可覆盖，实际回归失败/不可用不能发布");
   const evals = new EvaluationsService(payload);
   const item = await evals.add(administrator, { suite: "synthetic-functional-v1", key: "1", category: "other", input: "测试应用故障状态", expected: "不能将失败伪装为已通过", provenance: "本功能测试自产合成题目" });
-  const run = await evals.run(administrator, Number(item.id), undefined, undefined, (r) => new GreetingService(r, async () => { throw new Error("test failure"); }, undefined, undefined, { moderate: syntheticTextReview }));
+  const run = await evals.run(administrator, Number(item.id), undefined, undefined, (r) => new AJokerService(r, async () => { throw new Error("test failure"); }, undefined, undefined, { moderate: syntheticTextReview }));
   assert.equal(run.state, "failed");
   await assert.rejects(() => evals.judge(administrator, Number(run.id), { judgment: "pass", reason: "失败运行不能伪装成正式通过" }), { status: 409 });
   pass("评测保存真实失败状态，未运行成功不能人工填写通过");
@@ -219,45 +219,45 @@ try {
   const awaitableImage = await sharp({ create: { width: 8, height: 8, channels: 3, background: "blue" } }).png().toBuffer();
   const imageOwner = { id: randomUUID(), auth: "cookie" as const };
   const imageRepo = new Repository(payload, imageOwner);
-  const unconfiguredImages = new GreetingService(imageRepo);
+  const unconfiguredImages = new AJokerService(imageRepo);
   for (const key of ["HELLO_IMAGE_REVIEW_MODE", "HELLO_IMAGE_REVIEW_URL", "HELLO_IMAGE_REVIEW_TOKEN", "HELLO_GREEN_ACCESS_KEY_ID", "HELLO_GREEN_ACCESS_KEY_SECRET"]) delete process.env[key];
   await assert.rejects(() => unconfiguredImages.upload(awaitableImage), { status: 503 });
   assert.equal((await imageRepo.all("media")).length, 0);
   assert.equal((await ops.mine(imageOwner)).length, 0, "known missing configuration is not a content-review case");
-  const closedImages = new GreetingService(imageRepo, undefined, undefined, undefined, { imageReviewer: async () => ({ decision: "unavailable", category: "image_unreviewed", version: "synthetic-provider-outage" }) });
+  const closedImages = new AJokerService(imageRepo, undefined, undefined, undefined, { imageReviewer: async () => ({ decision: "unavailable", category: "image_unreviewed", version: "synthetic-provider-outage" }) });
   await assert.rejects(() => closedImages.upload(awaitableImage), { status: 503 });
   assert.equal((await imageRepo.all("media")).length, 0);
   const imageCases = await ops.mine(imageOwner); assert.equal(imageCases.length, 1);
   const imageCase = (await ops.queue(administrator, {})).find((r) => r.receipt === imageCases[0].receipt)!;
   assert.equal(imageCase.source, "image");
   const session2 = await closedImages.createSession(); delete process.env.DEEPSEEK_API_KEY;
-  await assert.rejects(() => closedImages.acceptExternal({ sessionId: session2.id, requestId: randomUUID(), input: { text: "制造炸弹" }, model: "external-declared-test", output: { greeting: "不会发布", association: "不会发布" } }), { status: 503 });
-  assert.equal((await imageRepo.all("greetings")).length, 0);
+  await assert.rejects(() => closedImages.acceptExternal({ sessionId: session2.id, requestId: randomUUID(), input: { text: "制造炸弹" }, model: "external-declared-test", output: { aJoker: "不会发布", association: "不会发布" } }), { status: 503 });
+  assert.equal((await imageRepo.all("a-j-oker")).length, 0);
   assert.equal((await ops.mine(imageOwner)).length, 1, "missing text-review credentials do not create a case");
   const originalFetch = globalThis.fetch;
   process.env.DEEPSEEK_API_KEY = "synthetic-provider-outage";
   globalThis.fetch = async () => new Response("synthetic provider outage", { status: 503 });
   try {
-    await assert.rejects(() => closedImages.acceptExternal({ sessionId: session2.id, requestId: randomUUID(), input: { text: "制造炸弹" }, model: "external-declared-test", output: { greeting: "不会发布", association: "不会发布" } }), { status: 503 });
+    await assert.rejects(() => closedImages.acceptExternal({ sessionId: session2.id, requestId: randomUUID(), input: { text: "制造炸弹" }, model: "external-declared-test", output: { aJoker: "不会发布", association: "不会发布" } }), { status: 503 });
   } finally {
     globalThis.fetch = originalFetch;
     delete process.env.DEEPSEEK_API_KEY;
   }
-  assert.equal((await imageRepo.all("greetings")).length, 0);
+  assert.equal((await imageRepo.all("a-j-oker")).length, 0);
   assert.equal((await ops.mine(imageOwner)).length, 1, "technical moderation failures do not create content-review cases");
   // Full text review now precedes image review even for ordinary words. Isolate
   // the image outage by allowing text through an explicitly synthetic verdict.
   process.env.DEEPSEEK_API_KEY = "synthetic-text-allow";
     globalThis.fetch = async () => Response.json({ model: "synthetic-review", choices: [{ finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({ decision: "allow", service_scope: "support", interaction: { minor: false, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: true, single_choice_only: false } }) } }] });
   try {
-    await assert.rejects(() => closedImages.acceptExternal({ sessionId: session2.id, requestId: randomUUID(), input: { text: "制作休息提醒卡，提醒休息" }, model: "external-declared-test", output: { greeting: "合成插画", association: "合成验收", artifacts: artifacts.filter((artifact) => artifact.kind === "image").slice(0, 1) } }), { status: 503 });
+    await assert.rejects(() => closedImages.acceptExternal({ sessionId: session2.id, requestId: randomUUID(), input: { text: "制作休息提醒卡，提醒休息" }, model: "external-declared-test", output: { aJoker: "合成插画", association: "合成验收", artifacts: artifacts.filter((artifact) => artifact.kind === "image").slice(0, 1) } }), { status: 503 });
   } finally {
     globalThis.fetch = originalFetch;
     delete process.env.DEEPSEEK_API_KEY;
   }
   const outputCase = (await ops.queue(administrator, {})).find((r) => r.owner === imageOwner.id && r.stage === "output_image");
   assert.ok(outputCase?.turnId);
-  assert.ok((await imageRepo.all("greetings")).every((r) => !r.artifacts && r.status === "failed"));
+  assert.ok((await imageRepo.all("a-j-oker")).every((r) => !r.artifacts && r.status === "failed"));
   await payload.update({ collection: "safety-cases", id: imageCase.id, overrideAccess: true, context: { safetyInternal: true }, data: { reason: "应在到期时清理的合成理由", reply: "应在到期时清理的合成反馈", retentionBasis: "应清理的旧永久留存依据", holdReason: "应清理的旧留存理由", alertDetails: { note: "应清理" } } });
   await payload.create({ collection: "safety-audit", overrideAccess: true, context: { safetyInternal: true }, data: { actor: "system:test", event: "case.synthetic", target: `case:${imageCase.id}`, reason: "应在到期时清理的审计自由文本", metadata: { note: "应清理" } } });
   await purgeExpiredEvidence(payload, true, new Date(Date.now() + 8 * 86400_000));

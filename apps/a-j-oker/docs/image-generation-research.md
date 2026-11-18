@@ -53,13 +53,13 @@ DeepSeek 的工具调用可以承接“需要图片时请求生图工具”的�
 | 环节 | 当前实现 | 对接生图的含义 |
 | --- | --- | --- |
 | 对话模型 | 默认 `deepseek-flash`，调用官方 `/chat/completions`；返回契约接收文字与工具调用 | 保留现有对话模型，新增独立生图服务即可。见 [模型适配](../src/models/deepseek.ts) |
-| Agent 工具 | 只有 `save_greeting`，工具名称白名单也只允许它；一轮最多 3 次模型调用，总执行时限 60 秒 | 仅改提示词不能获得生图能力，需要新增工具并调整工具选择及执行时限。见 [执行流程](../src/agent/runtime.ts) |
+| Agent 工具 | 只有 `save_a_j_oker`，工具名称白名单也只允许它；一轮最多 3 次模型调用，总执行时限 60 秒 | 仅改提示词不能获得生图能力，需要新增工具并调整工具选择及执行时限。见 [执行流程](../src/agent/runtime.ts) |
 | 图片回应作品 | `source.type=illustration` 保存几何形状描述；`source.type=media` 引用已有媒体编号 | 当前没有专用生图模型。新增图片保存为媒体后可沿用作品协议。见 [作品契约](../../../packages/base-chat-protocol/src/artifacts.ts)、[模型指令](../src/agent/instruction.ts) |
-| 几何图文件 | 读取作品时，程序将形状描述绘制为带 AI 标识的 PNG；保存回应时也会绘制副本做审核 | 这类图片目前没有调用 `MediaService.save`，不会因为已配置 OSS 就自动入桶。见 [图片绘制](../src/domain/artifact-rendering.ts)、[回应保存](../src/domain/greetings.ts) |
+| 几何图文件 | 读取作品时，程序将形状描述绘制为带 AI 标识的 PNG；保存回应时也会绘制副本做审核 | 这类图片目前没有调用 `MediaService.save`，不会因为已配置 OSS 就自动入桶。见 [图片绘制](../src/domain/artifact-rendering.ts)、[回应保存](../src/domain/a-j-oker.ts) |
 | 私有图片存储 | `HELLO_MEDIA_STORAGE=oss` 时，`MediaService.save` 写私有 OSS，Payload 保存所属用户、对象引用、大小、摘要；默认配置仍可使用数据库 | 新生图工具必须显式调用媒体保存链路。不能只把供应商 URL 填进回复。见 [媒体服务](../src/domain/media.ts)、[OSS 适配](../src/storage/oss.ts) |
 | 图片展示 | `/api/hello/artifact-image/{turnId}/{artifactId}` 读取作品后，按来源绘制或读取媒体；媒体读取校验所属用户及隔离状态。H5 使用现有登录身份，小程序带凭证下载后预览 | 前端已具备显示图片回应作品的基础，无需让模型编造链接。见 [服务端路由](../src/app/api/hello/[...path]/route.ts)、[小程序图片读取](../../a-j-oker-miniapp/src/chat/api.ts) |
 
-当前媒体写入固定使用 JPEG、`.jpg` 对象名与 `image/jpeg`，保存上限为 **2 MiB**；用户上传流程还会缩至 1280×1280 以内。生图 API 返回的原始 PNG/JPEG 不能不经处理直接塞进此接口，否则可能出现格式标注错误或超限；应明确选择压缩转 JPEG，或扩展存储类型与大小限制来保留高分辨率原图。见 [媒体限制](../src/domain/media-policy.ts)、[媒体写入](../src/domain/media.ts)、[用户上传处理](../src/domain/greetings.ts)。
+当前媒体写入固定使用 JPEG、`.jpg` 对象名与 `image/jpeg`，保存上限为 **2 MiB**；用户上传流程还会缩至 1280×1280 以内。生图 API 返回的原始 PNG/JPEG 不能不经处理直接塞进此接口，否则可能出现格式标注错误或超限；应明确选择压缩转 JPEG，或扩展存储类型与大小限制来保留高分辨率原图。见 [媒体限制](../src/domain/media-policy.ts)、[媒体写入](../src/domain/media.ts)、[用户上传处理](../src/domain/a-j-oker.ts)。
 
 已有图片审核调用 `HELLO_IMAGE_REVIEW_URL`/`HELLO_IMAGE_REVIEW_TOKEN`，缺少配置或判定不为 `allow` 时会阻止保存或展示。新增生图路径需复用输出图片审核；已有几何图的可见 AI 标识及 PNG 元数据写入不自动覆盖新媒体路径，需要为生成文件接入对应标识和来源记录。见 [图片审核](../src/operations/image-review.ts)、[标识代码](../src/labeling/metadata.ts)。这是当前代码行为，并非本轮对线上配置的确认。
 
@@ -90,7 +90,7 @@ flowchart LR
   F --> G[用户经应用鉴权查看图片]
 ```
 
-图片文件放在 OSS，所属用户与回应作品引用留在 Payload。工具成功返回自己的 `mediaId`，再由 `save_greeting` 保存 `source: { type: "media", mediaId }`；前端继续显示图片及预览入口。这符合 [ADR-0002：私有图片存储](./adr/0002-private-image-object-storage.md) 与 [ADR-0003：回应作品协议](./adr/0003-response-artifacts-and-ui-protocols.md)。
+图片文件放在 OSS，所属用户与回应作品引用留在 Payload。工具成功返回自己的 `mediaId`，再由 `save_a_j_oker` 保存 `source: { type: "media", mediaId }`；前端继续显示图片及预览入口。这符合 [ADR-0002：私有图片存储](./adr/0002-private-image-object-storage.md) 与 [ADR-0003：回应作品协议](./adr/0003-response-artifacts-and-ui-protocols.md)。
 
 “给用户链接”建议继续使用应用自己的鉴权地址，例如 `/api/hello/artifact-image/{turnId}/{artifactId}`。同一用户在记录和身份有效期间可以重复查看；该地址不意味着转发给任何人都能打开。当前 ADR 明确不公开桶、不向客户端提供长期 OSS 链接。
 

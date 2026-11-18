@@ -62,7 +62,7 @@ if (action === 'backup' || action === 'restore') {
   try {
     assertHealthy(db);
     db.exec('BEGIN IMMEDIATE');
-    const tables = ['sessions', 'greetings', 'media', 'credentials', 'adk_sessions', 'session_locks', 'wechat_identities', 'age_profiles'];
+    const tables = ['sessions', 'a_j_oker', 'media', 'credentials', 'adk_sessions', 'session_locks', 'wechat_identities', 'age_profiles'];
     const owners = db.prepare('SELECT id, owner, state, deleted_at FROM privacy_profiles').all();
     const remove = db.prepare("DELETE FROM privacy_profiles WHERE id = ? AND state = 'deleted'");
     for (const row of owners) {

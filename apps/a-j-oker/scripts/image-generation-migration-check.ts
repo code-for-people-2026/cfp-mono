@@ -11,10 +11,12 @@ const { migrations } = await import("../src/cms/migrations");
 const payload = await cms();
 try {
   const db = payload.db.drizzle, req = await createLocalReq({}, payload);
-  for (const migration of migrations.filter((item) => !item.name.includes("image_generation"))) await migration.up({ db, payload, req });
+  for (const migration of migrations.filter((item) => !item.name.includes("image_generation") && !item.name.includes("rename_a_j_oker"))) await migration.up({ db, payload, req });
   await db.run(sql`INSERT INTO media (owner, mime_type, base64) VALUES ('legacy-owner', 'image/png', 'c3ludGhldGlj')`);
   const migration = migrations.find((item) => item.name.includes("image_generation"))!;
   await migration.up({ db, payload, req }); await migration.up({ db, payload, req });
+  const renameMigration = migrations.find((item) => item.name.includes("rename_a_j_oker"))!;
+  await renameMigration.up({ db, payload, req });
   const row = (await payload.find({ collection: "media", overrideAccess: true })).docs[0];
   assert.equal(row.base64, "c3ludGhldGlj");
   assert.equal(row.generation, null);

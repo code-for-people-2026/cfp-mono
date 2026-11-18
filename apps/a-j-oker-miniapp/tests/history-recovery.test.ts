@@ -82,7 +82,7 @@ const initial: Turn = {
   input: { text: "已经保存的日常", mediaIds: [1] },
   status: "completed",
   mode: "platform",
-  greeting: "仍能看见的好彩头",
+  aJoker: "仍能看见的好彩头",
   model: "test-model",
   createdAt: "2026-10-02T00:00:00.000Z",
 };
@@ -474,7 +474,7 @@ describe("聊天历史与图片失败隔离", () => {
         ...initial,
         id: 2,
         input: { text: "新消息", mediaIds: [] },
-        greeting: "新回复",
+        aJoker: "新回复",
       });
       return { statusCode: 200, data: wire(options.data.runId) };
     });
@@ -530,16 +530,16 @@ describe("聊天历史与图片失败隔离", () => {
     expect(platform.pageScrollTo).not.toHaveBeenCalled();
   });
   it("原文可选择，AI回应长按或按钮复制保留标识和换行", async () => {
-    history[0].greeting = "先慢一点。\n今天也可以重新来过。";
+    history[0].aJoker = "先慢一点。\n今天也可以重新来过。";
     history[0].association = "从日常里找一个可信的角度";
     await mount(false);
-    for (const value of [initial.input.text, history[0].greeting]) {
+    for (const value of [initial.input.text, history[0].aJoker]) {
       const node = renderer!.root
         .findAllByType("text")
         .find((item) => item.children.join("") === value)!;
       expect(node.props.selectable).toBe(value === initial.input.text);
       expect(node.props.userSelect).toBe(value === initial.input.text);
-      if (value === history[0].greeting) expect(node.props.onLongPress).toBeTypeOf("function");
+      if (value === history[0].aJoker) expect(node.props.onLongPress).toBeTypeOf("function");
     }
     const requests = platform.request.mock.calls.length;
     const button = renderer!.root
@@ -549,7 +549,7 @@ describe("聊天历史与图片失败隔离", () => {
       await button.props.onClick();
     });
     expect(platform.setClipboardData).toHaveBeenLastCalledWith({
-      data: `AI 生成 · 阿 J 先生\n${history[0].greeting}`,
+      data: `AI 生成 · 阿 J 先生\n${history[0].aJoker}`,
     });
     expect(button.props["aria-label"]).toBe("已复制");
     expect(button.findAllByType("text")).toHaveLength(0);
@@ -713,7 +713,7 @@ describe("聊天历史与图片失败隔离", () => {
             id: 2,
             input: inputOf(options.data!),
             status: "running",
-            greeting: null,
+            aJoker: null,
           });
           throw new Error("等待回复超时");
         }
@@ -805,7 +805,7 @@ describe("聊天历史与图片失败隔离", () => {
             ...initial,
             id: 2,
             input: inputOf(args),
-            greeting: "确认原请求后保存的回复",
+            aJoker: "确认原请求后保存的回复",
           });
           return { statusCode: 200, data: wire(args.runId) };
         }
@@ -860,7 +860,7 @@ describe("聊天历史与图片失败隔离", () => {
     expect(text()).toContain("确认原请求后保存的回复");
   });
   it("旧 BYOK 历史仍可查看，当前发送保持平台模式且不显示密钥框", async () => {
-    history.push({ ...initial, id: 2, mode: "byok", greeting: "以前自带密钥生成的回复" });
+    history.push({ ...initial, id: 2, mode: "byok", aJoker: "以前自带密钥生成的回复" });
     await mount();
     expect(text()).toContain("以前自带密钥生成的回复");
     expect(renderer!.root.findAllByType("input")).toHaveLength(0);
@@ -898,7 +898,7 @@ describe("聊天历史与图片失败隔离", () => {
               ...initial,
               id: 2,
               input: inputOf(args),
-              greeting: "只保存一份的回复",
+              aJoker: "只保存一份的回复",
             };
             history.push(row);
             if (ids.length === 1) throw new Error("成功响应丢失");
@@ -1131,7 +1131,7 @@ describe("聊天历史与图片失败隔离", () => {
             ...initial,
             id: 2,
             input: inputOf(options.data!),
-            greeting: "响应虽丢失但已经保存",
+            aJoker: "响应虽丢失但已经保存",
           });
           throw new Error("合成故障：保存后连接中断");
         }
@@ -1232,7 +1232,7 @@ describe("聊天历史与图片失败隔离", () => {
             ...initial,
             id: 2,
             input: { text: "今天要加油", mediaIds: [] },
-            greeting: "已经保存的新回复",
+            aJoker: "已经保存的新回复",
           });
           return { statusCode: 200, data: wire(options.data!.runId) };
         }
@@ -1409,7 +1409,7 @@ describe("新会话与历史导航", () => {
         .find((node) => node.props.ariaLabel === "新建对话")!
         .props.onClick();
     });
-    expect(text()).not.toContain(initial.greeting);
+    expect(text()).not.toContain(initial.aJoker);
     expect(renderer!.root.findByType("textarea").props.value).toBe("");
     act(() =>
       renderer!.root
@@ -1430,7 +1430,7 @@ describe("新会话与历史导航", () => {
         )!
         .props.onClick();
     });
-    expect(text()).toContain(initial.greeting);
+    expect(text()).toContain(initial.aJoker);
     expect(renderer!.root.findByType("textarea").props.value).toBe(
       "还没发送的草稿",
     );
@@ -1474,7 +1474,7 @@ describe("新会话与历史导航", () => {
         .find((node) => node.children.includes("重试"))!
         .props.onClick();
     });
-    expect(text()).toContain(initial.greeting);
+    expect(text()).toContain(initial.aJoker);
     expect(renderer!.root.findByType("textarea").props.disabled).toBe(false);
     platform.getStorageSync.mockImplementation(() => "fixture-device-token");
   });
@@ -1495,10 +1495,10 @@ it("外部 Agent 回复的按钮与原生长按复制均保留来源声明", asy
   history[0].mode = "external";
   await mount(false);
   await act(async () => { await renderer!.root.findAllByType("button").find((item) => item.props["aria-label"] === "复制阿 J 先生的回复")!.props.onClick(); });
-  expect(platform.setClipboardData).toHaveBeenLastCalledWith({ data: `AI 生成（外部客户端声明） · 阿 J 先生\n${history[0].greeting}` });
+  expect(platform.setClipboardData).toHaveBeenLastCalledWith({ data: `AI 生成（外部客户端声明） · 阿 J 先生\n${history[0].aJoker}` });
   platform.setClipboardData.mockClear();
-  await act(async () => { renderer!.root.findAllByType("text").find((item) => item.children.join("") === history[0].greeting)!.props.onLongPress(); });
-  expect(platform.setClipboardData).toHaveBeenLastCalledWith({ data: `AI 生成（外部客户端声明） · 阿 J 先生\n${history[0].greeting}` });
+  await act(async () => { renderer!.root.findAllByType("text").find((item) => item.children.join("") === history[0].aJoker)!.props.onLongPress(); });
+  expect(platform.setClipboardData).toHaveBeenLastCalledWith({ data: `AI 生成（外部客户端声明） · 阿 J 先生\n${history[0].aJoker}` });
 });
 
 it.each(["platform", "external"] as const)("展开 %s 联想依据后，原生长按复制完整正文与来源标识", async (mode) => {

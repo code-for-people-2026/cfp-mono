@@ -11,7 +11,7 @@ try {
   const source = join(directory, 'source.db'), snapshot = join(directory, 'backup.db'), ledger = join(directory, 'ledger.ndjson');
   let db = new DatabaseSync(source);
   db.exec("PRAGMA journal_mode=WAL; CREATE TABLE privacy_profiles (id INTEGER PRIMARY KEY, owner TEXT, state TEXT, deleted_at TEXT)");
-  for (const table of ['sessions', 'greetings', 'media', 'credentials', 'adk_sessions', 'session_locks', 'wechat_identities', 'age_profiles']) db.exec(`CREATE TABLE ${table} (owner TEXT)`);
+  for (const table of ['sessions', 'a_j_oker', 'media', 'credentials', 'adk_sessions', 'session_locks', 'wechat_identities', 'age_profiles']) db.exec(`CREATE TABLE ${table} (owner TEXT)`);
   const old = new Date(Date.now() - 9 * 86400_000).toISOString();
   for (const [id, owner, state] of [[1, 'retire', 'deleted'], [2, 'partial', 'deleting'], [3, 'still-referenced', 'deleted'], [4, 'recent', 'deleted']]) db.prepare('INSERT INTO privacy_profiles VALUES (?, ?, ?, ?)').run(id, owner, state, old);
   db.prepare('INSERT INTO sessions VALUES (?)').run('still-referenced');

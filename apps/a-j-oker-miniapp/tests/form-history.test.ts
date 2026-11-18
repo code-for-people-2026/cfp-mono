@@ -18,7 +18,7 @@ function turn(id: number, status: Turn["status"], input: Input): Turn {
     input,
     status,
     mode: "platform",
-    greeting: null,
+    aJoker: null,
     error: null,
     association: null,
     approach: null,

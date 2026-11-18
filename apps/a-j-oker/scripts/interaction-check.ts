@@ -12,7 +12,7 @@ process.env.HELLO_PRIVACY_DELETION_LEDGER = `${dir}/deletions.ndjson`;
 process.env.DEEPSEEK_API_KEY = "synthetic-not-a-real-key";
 const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
-const { GreetingService } = await import("../src/domain/greetings");
+const { AJokerService } = await import("../src/domain/a-j-oker");
 const { seedSyntheticAge } = await import("./synthetic-age");
 const { AgeService } = await import("../src/age/service");
 const { InteractionService, emergencyContactForCase } = await import("../src/interaction/service");
@@ -28,17 +28,17 @@ try {
   const repo = new Repository(payload, owner);
   let generated = 0;
   const ordinary = { minor: false, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: false, single_choice_only: false };
-  const service = new GreetingService(repo, async (r) => { generated++; await r.save({ greeting: "继续聊吧", association: "合成回归", artifacts: [] }); }, undefined, undefined, {
+  const service = new AJokerService(repo, async (r) => { generated++; await r.save({ aJoker: "继续聊吧", association: "合成回归", artifacts: [] }); }, undefined, undefined, {
     moderate: async () => ({ serviceScope: "support" as const, interaction: ordinary }),
   });
   const session = await service.createSession();
-  await service.generateGreeting({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "小说里写道：“我12岁。”我想聊聊这个角色。", mediaIds: [] } });
+  await service.generateAJoker({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "小说里写道：“我12岁。”我想聊聊这个角色。", mediaIds: [] } });
   assert.equal(generated, 1, "quoted age is an ordinary semantic input");
   const minor = { ...ordinary, minor: true };
-  const minorService = new GreetingService(repo, async () => { throw new Error("minor must not generate"); }, undefined, undefined, {
+  const minorService = new AJokerService(repo, async () => { throw new Error("minor must not generate"); }, undefined, undefined, {
     moderate: async () => ({ serviceScope: "support" as const, interaction: minor }),
   });
-  await assert.rejects(minorService.generateGreeting({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "我今年12岁，想继续聊天。", mediaIds: [] } }), /年龄|未成年|复核/);
+  await assert.rejects(minorService.generateAJoker({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "我今年12岁，想继续聊天。", mediaIds: [] } }), /年龄|未成年|复核/);
   assert.equal(generated, 1, "semantic current-minor verdict must pause generation");
   assert.equal((await new AgeService(payload, owner).status()).state, "needs_review");
   await assert.rejects(new AgeService(payload, owner).requireCapability(), /复核/);

@@ -100,7 +100,7 @@ assert.equal(stranger.status, 401);
 const output = new URL("../.data/ecs-preview/artifacts-20261010/", import.meta.url);
 await mkdir(output, { recursive: true, mode: 0o700 });
 await writeFile(new URL("identity.json", output), JSON.stringify({ cookie, sessionId: session.id }), { mode: 0o600 });
-const report = { release: ready.release, promptVersion: turn.promptVersion, sessionId: session.id, turnIds: history.map((item: { id: number }) => item.id), kinds: artifacts.map((item) => item.kind), timings, followup: history[1].greeting };
+const report = { release: ready.release, promptVersion: turn.promptVersion, sessionId: session.id, turnIds: history.map((item: { id: number }) => item.id), kinds: artifacts.map((item) => item.kind), timings, followup: history[1].aJoker };
 await writeFile(new URL("report.json", output), JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report, null, 2));
 console.log("✓ HTTPS + AG-UI/A2UI 五类作品、私有图片/网页、零分表单续接与身份隔离通过。");

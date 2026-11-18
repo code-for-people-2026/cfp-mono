@@ -18,12 +18,12 @@ Object.assign(process.env, { HELLO_IMAGE_REVIEW_URL: "https://review.example.inv
 const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
 const { PrivacyService, recoverOwner } = await import("../src/privacy/service");
-const { runGreeting } = await import("../src/agent/runtime");
+const { runAJoker } = await import("../src/agent/runtime");
 const { AppError } = await import("../src/domain/contracts");
 const { privacyPolicy } = await import("../src/privacy/policy");
 const { MediaService } = await import("../src/domain/media");
 const { mintCredential, authenticate, COOKIE } = await import("../src/server/auth");
-const { GreetingService } = await import("../src/domain/greetings");
+const { AJokerService } = await import("../src/domain/a-j-oker");
 const { createMcpServer } = await import("../src/server/mcp");
 const { GET, POST } = await import("../src/app/api/hello/[...path]/route");
 const payload = await cms();
@@ -51,7 +51,7 @@ try {
   await assert.rejects(() => service.consent(consent), /运营资料尚未确认/);
   process.env.HELLO_DEPLOYED = "false";
   await service.consent(consent);
-  const server = createMcpServer(new GreetingService(repo));
+  const server = createMcpServer(new AJokerService(repo));
   const client = new Client({ name: "isolated-privacy-test", version: "1" });
   const [transportClient, transportServer] = InMemoryTransport.createLinkedPair();
   await Promise.all([client.connect(transportClient), server.connect(transportServer)]);
@@ -62,7 +62,7 @@ try {
   assert.equal((await request(["token"], {})).status, 403);
   await assert.rejects(() => service.requireInput({ text: "请分析我的病历" }), /单独同意/);
   const session = await repo.create("sessions", { title: "合成隐私测试", memory: { summary: "合成摘要", revision: 0, throughId: 0, compressions: 0 } });
-  await repo.create("greetings", { sessionId: session.id, requestKey: randomUUID(), fingerprint: "test", status: "completed", mode: "platform", input: { text: "合成情绪练习", mediaIds: [] }, greeting: "合成回复", artifacts: [] });
+  await repo.create("a-j-oker", { sessionId: session.id, requestKey: randomUUID(), fingerprint: "test", status: "completed", mode: "platform", input: { text: "合成情绪练习", mediaIds: [] }, aJoker: "合成回复", artifacts: [] });
   await repo.create("adk-sessions", { key: randomUUID(), snapshot: { id: "trace", appName: "privacy-test", userId: owner.id, state: {}, events: [], lastUpdateTime: 1 } });
   await service.consent({ ...consent, sensitive: true, external: true, externalRecipient: { name: "隔离测试客户端", contact: "test@example.invalid", region: "本地测试", privacyUrl: "https://example.invalid/privacy" } });
   assert.notEqual((await client.callTool({ name: "hello_list_sessions", arguments: {} })).isError, true);
@@ -74,11 +74,11 @@ try {
   const exportResponse = await request(["privacy", "export"]);
   assert.equal(exportResponse.status, 200);
   const exported = await exportResponse.json();
-  assert.equal(exported.records.greetings.length, 1);
+  assert.equal(exported.records["a-j-oker"].length, 1);
   assert.equal(exported.media[0].base64, photo.toString("base64"));
   assert.ok(!JSON.stringify(exported).includes(credential.token));
   assert.ok(!JSON.stringify(exported).includes("recoveryDigest"));
-  assert.equal((await (await request(["privacy", "export"], undefined, outsider.token)).json()).records.greetings.length, 0);
+  assert.equal((await (await request(["privacy", "export"], undefined, outsider.token)).json()).records["a-j-oker"].length, 0);
   const { code } = await service.recoveryCode();
   await payload.update({ collection: "credentials", overrideAccess: true, where: { owner: { equals: owner.id } }, data: { expiresAt: new Date(Date.now() - 1000).toISOString() } });
   assert.equal((await request(["privacy", "export"])).status, 401);
@@ -91,7 +91,7 @@ try {
   await assert.rejects(() => recoverOwner(payload, "x".repeat(43)), /恢复码无效/);
   await assert.rejects(() => authenticate(payload, new Request("http://localhost", { headers: { authorization: `Bearer ${recoveredTestCredential.token}` } })), /已过期/);
   const model = new ScriptedModel();
-  await runGreeting({ repo, turnId: 123456, sessionId: session.id, input: { text: "本轮生成中撤回", mediaIds: [] }, apiKey: "isolated-test", model: "isolated-test", readImage: async () => { throw new Error("unexpected image read"); }, saveHandoffPreamble: async (preamble) => preamble, save: async () => { await service.withdraw(); throw new AppError(403, "已撤回同意"); } }, model);
+  await runAJoker({ repo, turnId: 123456, sessionId: session.id, input: { text: "本轮生成中撤回", mediaIds: [] }, apiKey: "isolated-test", model: "isolated-test", readImage: async () => { throw new Error("unexpected image read"); }, saveHandoffPreamble: async (preamble) => preamble, save: async () => { await service.withdraw(); throw new AppError(403, "已撤回同意"); } }, model);
   assert.equal(model.requests.length, 1, "撤回后不继续向模型请求重试");
   assert.equal((await client.callTool({ name: "hello_list_sessions", arguments: {} })).isError, true);
   await client.close(); await server.close();
@@ -119,7 +119,7 @@ try {
   failDelete = false;
   const result = await deleting.deleteData();
   assert.equal(result.deleted, true);
-  for (const collection of ["sessions", "greetings", "media", "adk-sessions", "session-locks"] as const) assert.equal((await repo.all(collection)).length, 0);
+  for (const collection of ["sessions", "a-j-oker", "media", "adk-sessions", "session-locks"] as const) assert.equal((await repo.all(collection)).length, 0);
   assert.equal(objects.size, 0);
   assert.equal((await otherRepo.all("sessions")).length, 1);
   await assert.rejects(() => recoverOwner(payload, code), /已删除/);

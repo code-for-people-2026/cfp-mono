@@ -20,6 +20,7 @@ import * as expertSubtitle from "./20261116_090000_expert_subtitle";
 import * as expertHandoffPreamble from "./20261117_100000_handoff_preamble";
 import * as firstAdminLatch from "./20261117_150000_first_admin_latch";
 import * as ageReviewConversationEvidence from "./20261117_170000_age_review_conversation_evidence";
+import * as renameAJoker from "./20261118_100000_rename_a_j_oker";
 
 export const migrations = [
   {
@@ -64,4 +65,5 @@ export const migrations = [
   { up: expertHandoffPreamble.up, down: expertHandoffPreamble.down, name: "20261117_100000_handoff_preamble" },
   { up: firstAdminLatch.up, down: firstAdminLatch.down, name: "20261117_150000_first_admin_latch" },
   { up: ageReviewConversationEvidence.up, down: ageReviewConversationEvidence.down, name: "20261117_170000_age_review_conversation_evidence" },
+  { up: renameAJoker.up, down: renameAJoker.down, name: "20261118_100000_rename_a_j_oker" },
 ];

@@ -12,7 +12,7 @@
     "lexiconHash": "d08f595cebd7305d842ea86f6669d32a4d01cb4ce5671b5e35d879dfc37585aa",
     "promptVersion": "aj-safety-context-v1"
   },
-  "scope": "Real DeepSeek input moderation through GreetingService; synthetic generation fixture; fresh isolated Payload/SQLite database; two repetitions per sample. No image or generation-quality evaluation.",
+  "scope": "Real DeepSeek input moderation through AJokerService; synthetic generation fixture; fresh isolated Payload/SQLite database; two repetitions per sample. No image or generation-quality evaluation.",
   "passed": true,
   "results": [
     {

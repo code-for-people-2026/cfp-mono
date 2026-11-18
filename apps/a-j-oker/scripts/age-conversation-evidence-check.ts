@@ -13,7 +13,7 @@ process.env.DEEPSEEK_API_KEY = "synthetic-not-a-real-key";
 
 const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
-const { GreetingService } = await import("../src/domain/greetings");
+const { AJokerService } = await import("../src/domain/a-j-oker");
 const { AgeService } = await import("../src/age/service");
 const { OperationsService } = await import("../src/operations/service");
 const { eraseOperationsEvidence } = await import("../src/operations/retention");
@@ -26,23 +26,23 @@ try {
   await seedSyntheticAge(payload, owner);
   const repo = new Repository(payload, owner);
   let verdict = ordinary;
-  const service = new GreetingService(repo, async request => {
-    await request.save({ greeting: "先前助手回应", association: "证据回归", artifacts: [] });
+  const service = new AJokerService(repo, async request => {
+    await request.save({ aJoker: "先前助手回应", association: "证据回归", artifacts: [] });
   }, undefined, undefined, { moderate: async () => ({ serviceScope: "support" as const, interaction: verdict }) });
   const session = await service.createSession();
   const priorTurnIds: number[] = [];
   for (let index = 1; index <= 105; index++) {
-    const turn = await payload.create({ collection: "greetings", overrideAccess: true, data: {
+    const turn = await payload.create({ collection: "a-j-oker", overrideAccess: true, data: {
       owner: owner.id, sessionId: session.id, requestKey: `${owner.id}:${randomUUID()}`,
       fingerprint: `synthetic-history-${index}`, mode: "platform", status: "completed",
-      input: { text: `先前用户消息 ${index}`, mediaIds: [] }, greeting: "先前助手回应",
+      input: { text: `先前用户消息 ${index}`, mediaIds: [] }, aJoker: "先前助手回应",
     } });
     priorTurnIds.push(turn.id);
   }
   verdict = { ...ordinary, minor: true };
   const requestId = randomUUID();
   const triggerText = "我现在还未满十八岁";
-  await assert.rejects(service.generateGreeting({ sessionId: session.id, requestId, mode: "platform", input: { text: triggerText, mediaIds: [] } }), /年龄|复核|未成年/);
+  await assert.rejects(service.generateAJoker({ sessionId: session.id, requestId, mode: "platform", input: { text: triggerText, mediaIds: [] } }), /年龄|复核|未成年/);
 
   const ageCase = (await payload.find({ collection: "safety-cases", overrideAccess: true, limit: 1, where: { and: [
     { owner: { equals: owner.id } }, { stage: { equals: "age_review" } },

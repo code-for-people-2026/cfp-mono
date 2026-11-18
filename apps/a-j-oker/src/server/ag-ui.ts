@@ -16,7 +16,7 @@ import {
   toLegacyAjA2uiForClient,
 } from "@cfp/a-j-oker-contracts";
 import { AppError, turnSchema, type GenerationProgress } from "../domain/contracts";
-import type { GreetingService } from "../domain/greetings";
+import type { AJokerService } from "../domain/a-j-oker";
 import { requirePlatformInput } from "./service-scope";
 
 export function readAgentInput(value: unknown) {
@@ -92,22 +92,22 @@ type AgentArgs = z.infer<typeof turnSchema> & {
 // Same domain module as REST and MCP; transport only publishes committed, validated output.
 export function agentStream(
   service: {
-    generateGreeting: (
+    generateAJoker: (
       args: z.infer<typeof turnSchema>,
       progress?: (stage: GenerationProgress) => void,
     ) => Promise<
       Pick<
-        Awaited<ReturnType<GreetingService["generateGreeting"]>>,
-        "id" | "greeting" | "artifacts" | "status"
+        Awaited<ReturnType<AJokerService["generateAJoker"]>>,
+        "id" | "aJoker" | "artifacts" | "status"
       > &
         Partial<
           Pick<
-            Awaited<ReturnType<GreetingService["generateGreeting"]>>,
+            Awaited<ReturnType<AJokerService["generateAJoker"]>>,
             "specialist" | "model"
           >
         >
     >;
-    resumeImage?: (id: number, apiKey?: string, progress?: (stage: GenerationProgress) => void) => ReturnType<GreetingService["resumeImage"]>;
+    resumeImage?: (id: number, apiKey?: string, progress?: (stage: GenerationProgress) => void) => ReturnType<AJokerService["resumeImage"]>;
   },
   args: AgentArgs,
   resumeTurnId?: number,
@@ -151,12 +151,12 @@ export function agentStream(
             },
           });
         if (resumeTurnId && !service.resumeImage) throw new AppError(409, "此服务不支持继续取图");
-        const row = resumeTurnId ? await service.resumeImage!(resumeTurnId, args.apiKey, progress) : await service.generateGreeting(args, progress);
+        const row = resumeTurnId ? await service.resumeImage!(resumeTurnId, args.apiKey, progress) : await service.generateAJoker(args, progress);
         emit({
           type: EventType.STEP_FINISHED,
           stepName: "阿 J 先生正在构思回应与作品",
         });
-        const messageId = `greeting_${row.id}`;
+        const messageId = `aJoker_${row.id}`;
         emit({
           type: EventType.TEXT_MESSAGE_START,
           messageId,
@@ -165,7 +165,7 @@ export function agentStream(
         emit({
           type: EventType.TEXT_MESSAGE_CONTENT,
           messageId,
-          delta: String(row.greeting),
+          delta: String(row.aJoker),
         });
         emit({ type: EventType.TEXT_MESSAGE_END, messageId });
         // Missing capabilities are catalog-v1 for deployed clients. The v1

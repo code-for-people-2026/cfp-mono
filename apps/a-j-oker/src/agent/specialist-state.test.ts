@@ -5,7 +5,7 @@ import {
   specialistActionMatches,
   type SpecialistState,
 } from "./specialist-state";
-import { publicGreetingState } from "../domain/public-greeting";
+import { publicAJokerState } from "../domain/public-a-j-oker";
 
 const active: SpecialistState = {
   taskId: "task-1",
@@ -59,7 +59,7 @@ describe("durable specialist state", () => {
   });
 
   it("drops malformed private specialist snapshots at the public boundary", () => {
-    const projected = publicGreetingState({ id: 1, specialist: { prompt: "secret", currentTask: "secret task" } });
+    const projected = publicAJokerState({ id: 1, specialist: { prompt: "secret", currentTask: "secret task" } });
     expect(projected).not.toHaveProperty("specialist");
     expect(JSON.stringify(projected)).not.toContain("secret");
   });

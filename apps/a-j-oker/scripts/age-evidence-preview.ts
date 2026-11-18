@@ -29,10 +29,10 @@ if (origin && !["http://127.0.0.1:3310", "http://localhost:3310"].includes(origi
   throw new Error("Refusing to run: HELLO_ORIGIN must be the local port 3310 preview.");
 }
 
-const [{ cms }, { Repository }, { GreetingService }, { seedSyntheticAge }] = await Promise.all([
+const [{ cms }, { Repository }, { AJokerService }, { seedSyntheticAge }] = await Promise.all([
   import("../src/cms/client"),
   import("../src/cms/repository"),
-  import("../src/domain/greetings"),
+  import("../src/domain/a-j-oker"),
   import("./synthetic-age"),
 ]);
 
@@ -49,14 +49,14 @@ try {
 
   const repo = new Repository(payload, owner);
   let verdict = ordinary;
-  const service = new GreetingService(repo, async () => {
+  const service = new AJokerService(repo, async () => {
     throw new Error("Synthetic minor preview must stop before the stub model runs");
   }, undefined, undefined, { moderate: async () => ({ serviceScope: "support" as const, interaction: verdict }) });
   const session = await service.createSession();
   await repo.update("sessions", session.id, { title: label });
 
   for (let index = 1; index <= 6; index++) {
-    await payload.create({ collection: "greetings", overrideAccess: true, data: {
+    await payload.create({ collection: "a-j-oker", overrideAccess: true, data: {
       owner: owner.id,
       sessionId: session.id,
       requestKey: `${owner.id}:${randomUUID()}`,
@@ -64,14 +64,14 @@ try {
       mode: "platform",
       status: "completed",
       input: { text: `${label} prior synthetic user message ${index}`, mediaIds: [] },
-      greeting: `${label} prior synthetic assistant response ${index}`,
+      aJoker: `${label} prior synthetic assistant response ${index}`,
     } });
   }
 
   verdict = { ...ordinary, minor: true };
   const requestId = randomUUID();
   await assert.rejects(
-    service.generateGreeting({ sessionId: session.id, requestId, mode: "platform", input: { text: `${label} synthetic declaration: I am under eighteen`, mediaIds: [] } }),
+    service.generateAJoker({ sessionId: session.id, requestId, mode: "platform", input: { text: `${label} synthetic declaration: I am under eighteen`, mediaIds: [] } }),
     /年龄|复核|未成年/,
   );
 

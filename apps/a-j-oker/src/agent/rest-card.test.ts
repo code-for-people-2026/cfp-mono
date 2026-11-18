@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { imagePromptConstraints, restCardDeliveryError } from "./rest-card";
 it("一句文案不等于只要文字，空作品和虚构/旧图片都不能算交付", () => {
- const reply = { greeting: "卡片已做好", association: "测试" };
+ const reply = { aJoker: "卡片已做好", association: "测试" };
  expect(restCardDeliveryError(true, reply, undefined, false)).toBeTruthy();
  expect(restCardDeliveryError(true, {...reply,artifacts:[{kind:"image",id:"rest",title:"休息",alt:"休息",source:{type:"media",mediaId:9}}]}, 8, false)).toBeTruthy();
  expect(restCardDeliveryError(true, {...reply,artifacts:[{kind:"image",id:"rest",title:"休息",alt:"休息",source:{type:"media",mediaId:8}}]}, 8, false)).toBeUndefined();

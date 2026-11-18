@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { Payload } from "payload";
 import type { Generator } from "../src/agent/runtime";
-import type { GreetingService } from "../src/domain/greetings";
+import type { AJokerService } from "../src/domain/a-j-oker";
 import type { InteractionAssessment, Moderator, ModerationRequest } from "../src/domain/moderation";
 import type { ImageProvider } from "../src/images/wan";
 import type { Repository } from "../src/cms/repository";
@@ -47,7 +47,7 @@ const sourceFiles = [
   "Dockerfile.preview.dockerignore",
   "src/domain/moderation.ts",
   "src/operations/moderation.ts",
-  "src/domain/greetings.ts",
+  "src/domain/a-j-oker.ts",
   "src/interaction/service.ts",
   "src/models/deepseek.ts",
 ] as const;
@@ -157,7 +157,7 @@ try {
 
   const { cms } = await import("../src/cms/client");
   const { Repository } = await import("../src/cms/repository");
-  const { GreetingService } = await import("../src/domain/greetings");
+  const { AJokerService } = await import("../src/domain/a-j-oker");
   const { seedSyntheticAge } = await import("./synthetic-age");
   const { PrivacyService } = await import("../src/privacy/service");
   const { privacyPolicy } = await import("../src/privacy/policy");
@@ -174,7 +174,7 @@ try {
       ? { and: [{ owner: { equals: owner } }, { stage: { equals: stage } }, { severity: { equals: severity } }] }
       : { and: [{ owner: { equals: owner } }, { stage: { equals: stage } }] } })).totalDocs;
   const countTurns = async (owner: string) =>
-    (await payload!.count({ collection: "greetings", overrideAccess: true, where: { owner: { equals: owner } } })).totalDocs;
+    (await payload!.count({ collection: "a-j-oker", overrideAccess: true, where: { owner: { equals: owner } } })).totalDocs;
 
   payload = await cms();
   await seedAgents(payload);
@@ -220,21 +220,21 @@ try {
       submit: () => { imageCalls++; throw new Error("image generation is prohibited"); },
       result: () => { imageCalls++; throw new Error("image retrieval is prohibited"); },
     });
-    const service: GreetingService = new GreetingService(repo, generator, undefined, undefined, { moderate: moderator, imageProvider });
+    const service: AJokerService = new AJokerService(repo, generator, undefined, undefined, { moderate: moderator, imageProvider });
     const session = await service.createSession("语义保护回归");
     let agePause = false;
     let crisisGuidance = false;
     let sampleFailureKind: ProtectionResult["failureKind"];
 
     try {
-      const row = await service.generateGreeting({
+      const row = await service.generateAJoker({
         sessionId: session.id,
         requestId: randomUUID(),
         mode: "platform",
         input: { text: sample.text, mediaIds: [] },
       });
       crisisGuidance = row.model === "product-guidance"
-        && Boolean(row.greeting?.includes("眼前安全"))
+        && Boolean(row.aJoker?.includes("眼前安全"))
         && (row.artifacts?.length ?? 0) === 0;
       agePause = false;
     } catch (error) {

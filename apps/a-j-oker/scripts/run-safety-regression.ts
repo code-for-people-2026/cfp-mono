@@ -118,7 +118,7 @@ try {
   const baseConfig = await (await import("../payload.config")).default;
   const { seedAgents } = await import("../src/cms/seed");
   const { Repository } = await import("../src/cms/repository");
-  const { GreetingService } = await import("../src/domain/greetings");
+  const { AJokerService } = await import("../src/domain/a-j-oker");
   const { AppError, ContentPendingReviewError } = await import("../src/domain/contracts");
   const { seedSyntheticAge } = await import("./synthetic-age");
   const { PrivacyService } = await import("../src/privacy/service");
@@ -180,15 +180,15 @@ try {
     } });
     payloads.push(activePayload);
   }
-  await writeFile(path.join(outputDir, "metadata.json"), JSON.stringify({ startedAt: new Date().toISOString(), sampleHash: fingerprint(JSON.stringify(items)), promptVersion: PROMPT_VERSION, interactionVersion: INTERACTION_VERSION, rule: defaultRule, model: "deepseek-flash", officialMapping: "DeepSeek-V4.1-Flash-1017", initialReservationCny: startReserve, capCny: 50, stopCny, cases: items.length, concurrency, imageLimit, reviewLimit, imageScope: imageEnv ? "Real Wan generation and Green pixel review; approved pixels stored in local isolated DB; cumulative budget enforced before every paid call" : "text-only", scope: "Real GreetingService + fresh seeded prompts + real text moderation/generation, synthetic local DB/adult identities/consent. No real identity verification, external notifications, deployment or formal human safety verdict. No holdout used." }, null, 2));
+  await writeFile(path.join(outputDir, "metadata.json"), JSON.stringify({ startedAt: new Date().toISOString(), sampleHash: fingerprint(JSON.stringify(items)), promptVersion: PROMPT_VERSION, interactionVersion: INTERACTION_VERSION, rule: defaultRule, model: "deepseek-flash", officialMapping: "DeepSeek-V4.1-Flash-1017", initialReservationCny: startReserve, capCny: 50, stopCny, cases: items.length, concurrency, imageLimit, reviewLimit, imageScope: imageEnv ? "Real Wan generation and Green pixel review; approved pixels stored in local isolated DB; cumulative budget enforced before every paid call" : "text-only", scope: "Real AJokerService + fresh seeded prompts + real text moderation/generation, synthetic local DB/adult identities/consent. No real identity verification, external notifications, deployment or formal human safety verdict. No holdout used." }, null, 2));
   const runCase = async (item: SafetyCase, activePayload: (typeof payloads)[number], worker: number) => {
-    const stored = mode === "--resume-stored" ? await activePayload.findByID({ collection: "greetings", id: Number(resumeId), overrideAccess: true }) : undefined;
+    const stored = mode === "--resume-stored" ? await activePayload.findByID({ collection: "a-j-oker", id: Number(resumeId), overrideAccess: true }) : undefined;
     if (stored && (!stored.owner.startsWith("regression:") || stored.input.text !== item.turns[0] || stored.imageGeneration?.status !== "stored" || !stored.imageGeneration.mediaId || stored.status === "completed")) throw new Error("Not the expected unfinished synthetic stored image");
     const owner = { id: stored?.owner || `regression:${randomUUID()}`, auth: "cookie" as const, wechatKey: "" };
     if (!stored) await seedSyntheticAge(activePayload, owner);
     const repo = new Repository(activePayload, owner);
     if (!stored) await new PrivacyService(repo).consent({ version: privacyPolicy().version, core: true, model: true, sensitive: true, external: false });
-    const service = new GreetingService(repo, undefined, undefined, undefined, { imageProvider, imageReviewer }), session = stored ? { id: Number(stored.sessionId) } : await service.createSession("合成安全评测");
+    const service = new AJokerService(repo, undefined, undefined, undefined, { imageProvider, imageReviewer }), session = stored ? { id: Number(stored.sessionId) } : await service.createSession("合成安全评测");
     for (const [turn, input] of item.turns.entries()) {
       if (stopped || interrupted) break;
       const active = currentCase(); active.id = `${item.id}:${turn + 1}`; active.guardFailure = "";
@@ -196,8 +196,8 @@ try {
       await appendFile(path.join(outputDir, "进度.jsonl"), JSON.stringify({ id: active.id, startedAt, event: "started" }) + "\n");
       let result: Record<string, unknown>;
       try {
-        const row = stored ? await service.resumeImage(stored.id) : await service.generateGreeting({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: input, mediaIds: [] } });
-        result = { state: "completed", output: { greeting: row.greeting, association: row.association, artifacts: row.artifacts }, model: row.model, promptVersion: row.promptVersion };
+        const row = stored ? await service.resumeImage(stored.id) : await service.generateAJoker({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: input, mediaIds: [] } });
+        result = { state: "completed", output: { aJoker: row.aJoker, association: row.association, artifacts: row.artifacts }, model: row.model, promptVersion: row.promptVersion };
         if (imageEnv) {
           const files: string[] = [];
           for (const media of await repo.all("media")) {

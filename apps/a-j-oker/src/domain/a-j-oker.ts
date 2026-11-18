@@ -8,9 +8,9 @@ import {
   ajPresentationId,
   type Session,
 } from "@cfp/a-j-oker-contracts";
-import type { Greeting as GreetingRecord } from "../payload-types";
+import type { AJoker as AJokerRecord } from "../payload-types";
 import { reservePlatformCalls } from "../cms/platform-quota";
-import { GREETING_MAX_CALLS } from "../agent/limits";
+import { AJOKER_MAX_CALLS } from "../agent/limits";
 import { illustrationPng } from "./artifact-rendering";
 import { uploadedAiXmp } from "../labeling/upload-provenance";
 import sharp from "sharp";
@@ -23,9 +23,9 @@ import {
   type GenerationProgress,
   renderProgress,
   turnSchema,
-  greetingSchema,
+  aJokerSchema,
   handoffPreambleSchema,
-  type Greeting,
+  type AJoker,
   type Mode,
   type Inspiration,
 } from "./contracts";
@@ -58,12 +58,12 @@ import { randomUUID } from "node:crypto";
 import { ImageGenerationService, canResumeImage, readImageState } from "../images/service";
 import { configuredImageProvider, type ImageProvider } from "../images/wan";
 import { activeSpecialistFromTurns, specialistActionMatches, specialistStateSchema, type SpecialistState } from "../agent/specialist-state";
-import { publicGreetingState } from "./public-greeting";
+import { publicAJokerState } from "./public-a-j-oker";
 
 // 外部 MCP 路径只保存产物，不加载或启动平台的 Agent 运行时。
 const platformGenerator: Generator = async (request) => {
-  const { runGreeting } = await import("../agent/runtime");
-  return runGreeting(request);
+  const { runAJoker } = await import("../agent/runtime");
+  return runAJoker(request);
 };
 
 const requiredInputReviewSchema = z.object({
@@ -88,7 +88,7 @@ function formatFormValue(field: Field, value: FormValue | undefined) {
   return labels.join("、") || "（未填写）";
 }
 
-export class GreetingService {
+export class AJokerService {
   constructor(
     readonly repo: Repository,
     private generate: Generator = platformGenerator,
@@ -124,14 +124,14 @@ export class GreetingService {
   }
   async history(sessionId: number) {
     await this.repo.get("sessions", sessionId);
-    return (await this.repo.all("greetings", { sessionId: { equals: sessionId } })).map(publicGreetingState);
+    return (await this.repo.all("a-j-oker", { sessionId: { equals: sessionId } })).map(publicAJokerState);
   }
   async submission(sessionId: number, requestId: string) {
     await this.repo.get("sessions", sessionId);
-    const rows = await this.repo.list("greetings", {
+    const rows = await this.repo.list("a-j-oker", {
       and: [{ sessionId: { equals: sessionId } }, { requestKey: { equals: `${this.repo.owner.id}:${requestId}` } }],
     }, 1);
-    return { turn: rows[0] ? publicGreetingState(rows[0]) : null };
+    return { turn: rows[0] ? publicAJokerState(rows[0]) : null };
   }
   async upload(data: Uint8Array) {
     if (data.length > 5 * 1024 * 1024)
@@ -189,7 +189,7 @@ export class GreetingService {
     }));
     if (input.formResponse) {
       const response = input.formResponse;
-      const source = await this.repo.get("greetings", response.turnId);
+      const source = await this.repo.get("a-j-oker", response.turnId);
       if (source.sessionId !== sessionId || source.status !== "completed")
         throw new AppError(400, "表单不属于当前对话或尚未完成");
       const savedArtifacts = legacyArtifactsSchema.parse(
@@ -227,7 +227,7 @@ export class GreetingService {
     const hash = fingerprint({ sessionId, mode, input, model, extra });
     const existing = (
       await this.repo.list(
-        "greetings",
+        "a-j-oker",
         { requestKey: { equals: requestKey } },
         1,
       )
@@ -236,7 +236,7 @@ export class GreetingService {
       if (existing.fingerprint !== hash)
         throw new AppError(409, "同一个请求标识不能用于不同内容");
       if (resumeTurnId === existing.id && canResumeImage(existing)) {
-        const row = await this.repo.update("greetings", existing.id, { status: "running", error: null });
+        const row = await this.repo.update("a-j-oker", existing.id, { status: "running", error: null });
         return { row, duplicate: false, guidance: undefined, imageRequested: true };
       }
       if (existing.status === "running" && mode !== "external")
@@ -319,7 +319,7 @@ export class GreetingService {
         : {}, // 只触碰活动时间，避免将读取时的隔离占位标题写回原记录。
     );
 
-    const row = await this.repo.create("greetings", {
+    const row = await this.repo.create("a-j-oker", {
       sessionId,
       requestKey,
       fingerprint: hash,
@@ -333,15 +333,15 @@ export class GreetingService {
   }
   private async completeProductGuidance(id: number, guidance: string, specialist?: SpecialistState) {
     await assertGenerationAllowed(this.repo.payload, this.repo.owner.id);
-    const row = await this.repo.get("greetings", id);
+    const row = await this.repo.get("a-j-oker", id);
     if (row.visibility === "quarantined") throw new AppError(403, "此轮内容已隔离，不能继续发布");
     const deterministicReturn = Boolean((row.input as Inspiration).action);
     if (row.status !== "running" || (row.model !== "product-guidance" && !deterministicReturn))
       throw new AppError(409, "本轮不再接受产品指引");
     // Only server-owned interaction, scope or forget guidance; never model text.
     // Public complete() has no bypass option and still reviews every supplied output.
-    return this.repo.update("greetings", id, {
-      greeting: guidance,
+    return this.repo.update("a-j-oker", id, {
+      aJoker: guidance,
       association: deterministicReturn ? "本人明确选择结束专家协作，系统完成路由切换。" : "产品操作与安全指引",
       artifacts: [], approach: "supportive", status: "completed",
       ...(specialist ? { specialist: {
@@ -352,14 +352,14 @@ export class GreetingService {
       } } : {}),
     });
   }
-  async complete(id: number, value: Greeting, reviewKey?: string, specialist?: SpecialistState) {
+  async complete(id: number, value: AJoker, reviewKey?: string, specialist?: SpecialistState) {
     await assertGenerationAllowed(this.repo.payload, this.repo.owner.id);
-    const output = greetingSchema.parse(value);
-    const row = await this.repo.get("greetings", id);
+    const output = aJokerSchema.parse(value);
+    const row = await this.repo.get("a-j-oker", id);
     if (row.visibility === "quarantined") throw new AppError(403, "此轮内容已隔离，不能继续发布");
     if (row.status === "completed") {
       if (
-        row.greeting !== output.greeting ||
+        row.aJoker !== output.aJoker ||
         row.association !== output.association ||
         fingerprint(row.artifacts ?? []) !== fingerprint(output.artifacts ?? []) ||
         (row.approach ?? undefined) !== output.approach
@@ -380,7 +380,7 @@ export class GreetingService {
           turnId: row.id, sessionId: Number(row.sessionId), apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY }));
       } catch (error) {
         if (imageState && error instanceof ContentReviewError && error.status === 422)
-          await this.repo.update("greetings", row.id, { imageGeneration: { ...imageState, status: "blocked" } });
+          await this.repo.update("a-j-oker", row.id, { imageGeneration: { ...imageState, status: "blocked" } });
         throw error;
       }
     }
@@ -416,19 +416,19 @@ export class GreetingService {
       if (!scopeReview.success) throw new ContentReviewError(503, "作品范围审核暂未完成，请稍后重试");
       if (scopeReview.data.serviceScope !== "support") throw new AppError(422, CREATION_REFUSAL);
     }
-    return this.repo.update("greetings", id, {
+    return this.repo.update("a-j-oker", id, {
       ...output,
       ...(specialist ? { specialist: specialistStateSchema.parse(specialist) } : {}),
       status: "completed",
     });
   }
   async resumeImage(turnId: number, apiKey?: string, progress?: (stage: GenerationProgress) => void) {
-    const row = await this.repo.get("greetings", turnId);
+    const row = await this.repo.get("a-j-oker", turnId);
     if (row.status === "completed") return row;
     if (!canResumeImage(row) || row.mode === "external") throw new AppError(409, "这次图片任务不能继续，请查看本轮状态");
-    return this.generateGreeting({ sessionId: row.sessionId, requestId: String(row.requestKey).slice(this.repo.owner.id.length + 1), input: row.input, mode: row.mode, apiKey }, progress, row.id);
+    return this.generateAJoker({ sessionId: row.sessionId, requestId: String(row.requestKey).slice(this.repo.owner.id.length + 1), input: row.input, mode: row.mode, apiKey }, progress, row.id);
   }
-  async generateGreeting(value: unknown, progress?: (stage: GenerationProgress) => void, resumeTurnId?: number) {
+  async generateAJoker(value: unknown, progress?: (stage: GenerationProgress) => void, resumeTurnId?: number) {
     const args = turnSchema.parse(value);
     const key =
       args.mode === "byok" ? args.apiKey : process.env.DEEPSEEK_API_KEY;
@@ -442,7 +442,7 @@ export class GreetingService {
     const model = process.env.HELLO_MODEL || DEFAULT_MODEL;
     const release = await this.repo.acquire(args.sessionId);
     return release.run(async () => {
-    let row: GreetingRecord | undefined;
+    let row: AJokerRecord | undefined;
     let reviewFailure: ContentReviewError | ServiceProblemError | undefined;
     const started = Date.now();
     try {
@@ -460,7 +460,7 @@ export class GreetingService {
       // Replay wins over current-state checks: a retried successful return must
       // remain idempotent after that return has closed the task.
       if (result.duplicate) return row;
-      const committed = await this.repo.all("greetings", { sessionId: { equals: args.sessionId } });
+      const committed = await this.repo.all("a-j-oker", { sessionId: { equals: args.sessionId } });
       const forgottenThroughId = await new ContextService(this.repo).forgottenThroughId(args.sessionId);
       const preActive = activeSpecialistFromTurns(committed, forgottenThroughId);
       if (args.input.action) {
@@ -481,7 +481,7 @@ export class GreetingService {
               && input.formResponse.artifactId === response.artifactId;
           });
           if (alreadyAnswered) throw new AppError(409, "该表单已经提交，请刷新查看结果");
-          const hasForm = (item: GreetingRecord) => {
+          const hasForm = (item: AJokerRecord) => {
             try {
               return legacyArtifactsSchema.parse(item.artifacts ?? [], { jitless: true })
                 .some((artifact) => artifact.kind === "form");
@@ -507,7 +507,7 @@ export class GreetingService {
       if (result.guidance) {
         let specialist: SpecialistState | undefined;
         if (result.forgetContext) {
-          const previous = (await this.repo.all("greetings", { sessionId: { equals: args.sessionId } }))
+          const previous = (await this.repo.all("a-j-oker", { sessionId: { equals: args.sessionId } }))
             .filter((item) => item.id !== row!.id && item.status === "completed" && item.specialist)
             .sort((a, b) => a.id - b.id).at(-1);
           const parsed = previous?.specialist ? specialistStateSchema.safeParse(previous.specialist) : undefined;
@@ -515,7 +515,7 @@ export class GreetingService {
         }
         return await this.completeProductGuidance(row.id, result.guidance, specialist);
       }
-      if (args.mode === "platform") await reservePlatformCalls(this.repo.payload, GREETING_MAX_CALLS);
+      if (args.mode === "platform") await reservePlatformCalls(this.repo.payload, AJOKER_MAX_CALLS);
       const images = new ImageGenerationService(this.repo, this.media, this.moderate, this.imageReviewer, this.imageProvider);
       const imageState = readImageState(row);
       // begin() has both authenticated this response against its source form
@@ -523,7 +523,7 @@ export class GreetingService {
       // is therefore an answer turn, not a new request for that same form.
       const validatedFormSubmission = Boolean(args.input.formResponse);
       const active = activeSpecialistFromTurns(
-        (await this.repo.all("greetings", { sessionId: { equals: args.sessionId } })).filter((item) => item.id !== row!.id),
+        (await this.repo.all("a-j-oker", { sessionId: { equals: args.sessionId } })).filter((item) => item.id !== row!.id),
         forgottenThroughId,
       );
       const activeSpecialist = active?.state;
@@ -546,7 +546,7 @@ export class GreetingService {
         onStage: progress,
         saveHandoffPreamble: async (preamble) => {
           const value = handoffPreambleSchema.parse(preamble);
-          const current = await this.repo.get("greetings", row!.id);
+          const current = await this.repo.get("a-j-oker", row!.id);
           if (current.status !== "running")
             throw new AppError(409, "本轮不再接受专家交接前导");
           try {
@@ -567,7 +567,7 @@ export class GreetingService {
               sessionId: Number(row!.sessionId),
               apiKey: key ?? process.env.DEEPSEEK_API_KEY,
             });
-            await this.repo.update("greetings", row!.id, {
+            await this.repo.update("a-j-oker", row!.id, {
               handoffPreamble: value,
             });
             return value;
@@ -599,15 +599,15 @@ export class GreetingService {
           }
         },
       });
-      const saved = await this.repo.get("greetings", row.id);
+      const saved = await this.repo.get("a-j-oker", row.id);
       if (saved.status !== "completed")
         throw new AppError(502, "模型没有调用保存工具，本轮未产生吉祥话");
-      return await this.repo.update("greetings", row.id, {
+      return await this.repo.update("a-j-oker", row.id, {
         durationMs: Date.now() - started,
       });
     } catch (error) {
       if (row) {
-        const saved = await this.repo.get("greetings", row.id);
+        const saved = await this.repo.get("a-j-oker", row.id);
         // 工具已经成功保存时，后续说明或事件失败不能把成功产物标为失败。
         if (saved.status === "completed") return saved;
         const blockImage = (
@@ -616,7 +616,7 @@ export class GreetingService {
         ) && !(error instanceof ImageReviewUnavailableError)
           && !(reviewFailure instanceof ImageReviewUnavailableError);
         const effectiveFailure = reviewFailure ?? (error instanceof AppError ? error : undefined);
-        await this.repo.update("greetings", row.id, {
+        await this.repo.update("a-j-oker", row.id, {
           status: "failed",
           error: effectiveFailure?.message ?? "模型调用或保存失败，请检查配置后重试",
           durationMs: Date.now() - started,
@@ -640,7 +640,7 @@ export class GreetingService {
     const args = externalSchema.parse(value);
     const release = await this.repo.acquire(args.sessionId);
     return release.run(async () => {
-    let pending: GreetingRecord | undefined;
+    let pending: AJokerRecord | undefined;
     try {
       const { row, duplicate, guidance } = await this.begin(
         args.sessionId,
@@ -656,8 +656,8 @@ export class GreetingService {
     } catch (error) {
       // Validation failures are terminal; transient storage failures keep the request retryable.
       if (pending && error instanceof AppError) {
-        const row = await this.repo.get("greetings", pending.id);
-        if (row.status === "running") await this.repo.update("greetings", row.id, { status: "failed", error: "外部回应作品未能通过校验或保存" });
+        const row = await this.repo.get("a-j-oker", pending.id);
+        if (row.status === "running") await this.repo.update("a-j-oker", row.id, { status: "failed", error: "外部回应作品未能通过校验或保存" });
       }
       throw error;
     } finally {

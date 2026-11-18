@@ -1,6 +1,6 @@
 import {
   approachSchema,
-  greetingSchema,
+  aJokerSchema,
   handoffPreambleSchema,
 } from "@cfp/a-j-oker-contracts";
 import { artifactsSchema } from "@cfp/base-chat-protocol";
@@ -12,7 +12,7 @@ const psychologyConsultationBaseSchema = z
     urgency: z.enum(["routine", "immediate"]),
     knowledgeQuery: z.string().trim().min(1).max(80).optional(),
     // Produced by the coordinator in the same delegation decision. It is not
-    // expert output and must never be saved as a partial final greeting.
+    // expert output and must never be saved as a partial final aJoker.
     userFacingIntro: handoffPreambleSchema.optional(),
   })
   .strict();
@@ -43,7 +43,7 @@ export const psychologyPlanSubmissionSchema = z
     needsImmediateSupport: z.boolean(),
     usedSourceIds: z.array(z.string().trim().min(1).max(80)).max(6).default([]),
     artifacts: artifactsSchema.optional(),
-    reply: greetingSchema.optional(),
+    reply: aJokerSchema.optional(),
     lifecycle: z.enum(["continue", "complete"]).optional(),
   })
   .strict();

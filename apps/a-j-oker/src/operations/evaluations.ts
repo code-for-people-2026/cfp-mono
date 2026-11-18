@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Payload, TypedUser } from "payload";
 import { z } from "zod";
 import { Repository } from "../cms/repository";
-import { GreetingService } from "../domain/greetings";
+import { AJokerService } from "../domain/a-j-oker";
 import { AppError } from "../domain/contracts";
 import { DEFAULT_MODEL } from "../models/deepseek";
 import { activeRule, isAdministrator } from "./policy";
@@ -20,7 +20,7 @@ export class EvaluationsService {
       return row;
     });
   }
-  async run(user: TypedUser, itemId: number, parentId?: number, remediation?: string, factory = (repo: Repository) => new GreetingService(repo)) {
+  async run(user: TypedUser, itemId: number, parentId?: number, remediation?: string, factory = (repo: Repository) => new AJokerService(repo)) {
     this.admin(user);
     if (parentId && (!remediation || remediation.trim().length < 8)) throw new AppError(400, "复测需要整改说明");
     const item = await this.payload.findByID({ collection: "safety-evaluation-items", id: itemId, overrideAccess: true });
@@ -39,8 +39,8 @@ export class EvaluationsService {
     try {
       const service = factory(new Repository(this.payload, { id: owner, auth: "cookie" }));
       const session = await service.createSession("运营安全评测（合成输入）");
-      const turn = await service.generateGreeting({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: item.input, mediaIds: [] } });
-      output = { state: "completed", turnId: turn.id, output: { greeting: turn.greeting, association: turn.association, artifacts: turn.artifacts } };
+      const turn = await service.generateAJoker({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: item.input, mediaIds: [] } });
+      output = { state: "completed", turnId: turn.id, output: { aJoker: turn.aJoker, association: turn.association, artifacts: turn.artifacts } };
     } catch (error) { output = { state: error instanceof AppError && error.status === 422 ? "blocked" : "failed", error: error instanceof AppError ? error.message : "应用运行失败，未取得真实输出" }; }
     return transaction(this.payload, async (req) => {
       const result = await this.payload.update({ collection: "safety-evaluations", id: row.id, overrideAccess: true, req, data: output });

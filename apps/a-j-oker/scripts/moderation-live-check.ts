@@ -20,7 +20,7 @@ process.env.HELLO_ORIGIN = "http://127.0.0.1:3318";
 
 const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
-const { GreetingService } = await import("../src/domain/greetings");
+const { AJokerService } = await import("../src/domain/a-j-oker");
 const { ContentReviewError } = await import("../src/domain/contracts");
 const { OperationsService } = await import("../src/operations/service");
 const { defaultRule } = await import("../src/operations/policy");
@@ -47,9 +47,9 @@ try {
       let generationCalls = 0;
       // Only generation is a fixture: the default production moderator calls
       // DeepSeek for the unmodified sample. It is never injected or mocked.
-      const service = new GreetingService(repo, async (args) => {
+      const service = new AJokerService(repo, async (args) => {
         generationCalls++;
-        await args.save({ greeting: "这是一条合成验证回复。", association: "仅检查审核链路" });
+        await args.save({ aJoker: "这是一条合成验证回复。", association: "仅检查审核链路" });
       });
       const session = await service.createSession(`真实审核验收 ${sample.key} ${round}`);
       const requestId = randomUUID();
@@ -57,7 +57,7 @@ try {
       let status = 200;
       const started = Date.now();
       try {
-        await service.generateGreeting({ sessionId: session.id, requestId, mode: "platform", input: { text: sample.text } });
+        await service.generateAJoker({ sessionId: session.id, requestId, mode: "platform", input: { text: sample.text } });
       } catch (error) {
         if (!(error instanceof ContentReviewError)) throw error;
         status = error.status;
@@ -91,9 +91,9 @@ try {
       }
     }
   }
-  await assert.rejects(() => payload.find({ collection: "greetings", overrideAccess: false, user: reviewer }));
+  await assert.rejects(() => payload.find({ collection: "a-j-oker", overrideAccess: false, user: reviewer }));
   await assert.rejects(() => payload.find({ collection: "safety-evidence", overrideAccess: false, user: reviewer }));
-  const report = { startedAt, finishedAt: new Date().toISOString(), model: process.env.HELLO_MODEL || DEFAULT_MODEL, rule: defaultRule, scope: "Real DeepSeek input moderation through GreetingService; synthetic generation fixture; fresh isolated Payload/SQLite database; two repetitions per sample. No image or generation-quality evaluation.", passed: failures.length === 0, results, failures };
+  const report = { startedAt, finishedAt: new Date().toISOString(), model: process.env.HELLO_MODEL || DEFAULT_MODEL, rule: defaultRule, scope: "Real DeepSeek input moderation through AJokerService; synthetic generation fixture; fresh isolated Payload/SQLite database; two repetitions per sample. No image or generation-quality evaluation.", passed: failures.length === 0, results, failures };
   await writeFile(path.join(directory, "report.json"), JSON.stringify(report, null, 2) + "\n");
   await writeFile(path.join(directory, "access.json"), JSON.stringify({ database: process.env.HELLO_DATABASE_URI, secret: process.env.PAYLOAD_SECRET, origin: process.env.HELLO_ORIGIN, email: reviewer.email, password }, null, 2), { mode: 0o600 });
   console.log(JSON.stringify({ directory, passed: report.passed, checks: results.length, failures }));

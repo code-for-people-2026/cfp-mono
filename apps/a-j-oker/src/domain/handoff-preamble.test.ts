@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Repository } from "../cms/repository";
 import { AppError, ContentReviewError, ServiceProblemError } from "./contracts";
 import { ContextService } from "./context";
-import { GreetingService } from "./greetings";
+import { AJokerService } from "./a-j-oker";
 import type { Moderator } from "./moderation";
 
 vi.mock("../operations/enforcement", () => ({
@@ -55,7 +55,7 @@ async function callbackService(options: {
   moderate: Moderator;
   row?: typeof baseRow;
 }) {
-  const service = new GreetingService(
+  const service = new AJokerService(
     options.repo,
     async (request) => {
       await request.saveHandoffPreamble("我先听见了这件事。接下来请这位 AI 专家陪你把它说清楚。");
@@ -73,7 +73,7 @@ async function callbackService(options: {
     duplicate: false,
     imageRequested: false,
   });
-  await service.generateGreeting({
+  await service.generateAJoker({
     sessionId: 7,
     requestId,
     mode: "byok",
@@ -109,7 +109,7 @@ describe("expert handoff preamble safety boundary", () => {
       message: "stop after callback",
     });
     expect(moderate).toHaveBeenCalledOnce();
-    expect(update).toHaveBeenCalledWith("greetings", 12, {
+    expect(update).toHaveBeenCalledWith("a-j-oker", 12, {
       handoffPreamble: "我先听见了这件事。接下来请这位 AI 专家陪你把它说清楚。",
     });
   });
@@ -118,7 +118,7 @@ describe("expert handoff preamble safety boundary", () => {
     const row = { ...baseRow, handoffPreamble: "已经保存且不可变的阿 J 前导说明。" };
     const { repo, update } = fakeRepo(row);
     const moderate = vi.fn();
-    const service = new GreetingService(
+    const service = new AJokerService(
       repo,
       async (request) => {
         await expect(request.saveHandoffPreamble(row.handoffPreamble!))
@@ -133,7 +133,7 @@ describe("expert handoff preamble safety boundary", () => {
     );
     vi.spyOn(service as unknown as { begin: (unknown: unknown) => Promise<unknown> }, "begin")
       .mockResolvedValue({ row, duplicate: false, imageRequested: false });
-    await expect(service.generateGreeting({
+    await expect(service.generateAJoker({
       sessionId: 7,
       requestId,
       mode: "byok",
@@ -142,7 +142,7 @@ describe("expert handoff preamble safety boundary", () => {
     })).rejects.toMatchObject({ status: 503 });
     expect(assertGenerationAllowed).toHaveBeenCalled();
     expect(moderate).not.toHaveBeenCalled();
-    expect(update).not.toHaveBeenCalledWith("greetings", 12, { handoffPreamble: row.handoffPreamble });
+    expect(update).not.toHaveBeenCalledWith("a-j-oker", 12, { handoffPreamble: row.handoffPreamble });
   });
 
   it("checks permission and quarantine before reusing an identical persisted preamble", async () => {
@@ -165,7 +165,7 @@ describe("expert handoff preamble safety boundary", () => {
     const rejection = new ContentReviewError(422, "这次回应未通过内容审核");
     const moderate = vi.fn().mockRejectedValue(rejection);
     await expect(callbackService({ repo, moderate })).rejects.toBe(rejection);
-    expect(update).not.toHaveBeenCalledWith("greetings", 12, {
+    expect(update).not.toHaveBeenCalledWith("a-j-oker", 12, {
       handoffPreamble: "我先听见了这件事。接下来请这位 AI 专家陪你把它说清楚。",
     });
   });
@@ -180,7 +180,7 @@ describe("expert handoff preamble safety boundary", () => {
     const moderate = vi.fn().mockRejectedValue(failure);
     await expect(callbackService({ repo, moderate })).rejects.toBe(failure);
     expect(failure).not.toBeInstanceOf(ContentReviewError);
-    expect(update).not.toHaveBeenCalledWith("greetings", 12, {
+    expect(update).not.toHaveBeenCalledWith("a-j-oker", 12, {
       handoffPreamble: "我先听见了这件事。接下来请这位 AI 专家陪你把它说清楚。",
     });
   });
@@ -214,7 +214,7 @@ describe("expert handoff preamble safety boundary", () => {
         "我先听见了这件事。接下来请这位 AI 专家陪你把它说清楚。",
       ).catch(() => undefined);
     });
-    const service = new GreetingService(repo, generate, undefined, undefined, {
+    const service = new AJokerService(repo, generate, undefined, undefined, {
       moderate,
     });
     vi.spyOn(
@@ -222,7 +222,7 @@ describe("expert handoff preamble safety boundary", () => {
       "begin",
     ).mockResolvedValue({ row, duplicate: false, imageRequested: false });
 
-    await expect(service.generateGreeting({
+    await expect(service.generateAJoker({
       sessionId: 7,
       requestId,
       mode: "byok",
@@ -230,7 +230,7 @@ describe("expert handoff preamble safety boundary", () => {
       input: baseRow.input,
     })).rejects.toBe(failure);
     expect(update).toHaveBeenCalledTimes(1);
-    expect(update).toHaveBeenCalledWith("greetings", 12, expect.objectContaining({
+    expect(update).toHaveBeenCalledWith("a-j-oker", 12, expect.objectContaining({
       status: "failed",
       error: "服务暂时不可用，本次结果尚未确认；请先确认本轮状态，不要直接重复生成。",
     }));
@@ -249,7 +249,7 @@ describe("expert handoff preamble safety boundary", () => {
     const reviewContext = vi
       .spyOn(ContextService.prototype, "reviewContext")
       .mockResolvedValue({ memory: "", previous: [] });
-    const service = new GreetingService(repo, generate, undefined, undefined, {
+    const service = new AJokerService(repo, generate, undefined, undefined, {
       moderate,
     });
     vi.mocked(repo.get).mockImplementation(async () =>
@@ -258,7 +258,7 @@ describe("expert handoff preamble safety boundary", () => {
     vi.mocked(repo.list).mockResolvedValue([]);
 
     try {
-      await expect(service.generateGreeting({
+      await expect(service.generateAJoker({
       sessionId: 7,
       requestId,
       mode: "byok",

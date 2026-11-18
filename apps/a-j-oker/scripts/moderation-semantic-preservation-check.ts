@@ -34,7 +34,7 @@ globalThis.fetch = async (url, options) => {
 
 const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
-const { GreetingService } = await import("../src/domain/greetings");
+const { AJokerService } = await import("../src/domain/a-j-oker");
 const { seedSyntheticAge } = await import("./synthetic-age");
 const { PrivacyService } = await import("../src/privacy/service");
 const { privacyPolicy } = await import("../src/privacy/policy");
@@ -61,9 +61,9 @@ async function scenario(text: string) {
   let generated = false;
   let pendingRejection: PendingReviewError | undefined;
   const unrecordedModerator = operationalModerator(fixture.repo);
-  const service = new GreetingService(fixture.repo, async request => {
+  const service = new AJokerService(fixture.repo, async request => {
     generated = true;
-    await request.save({ greeting: "固定生成器说明。", association: "普通情绪支持", artifacts: [], approach: "supportive" });
+    await request.save({ aJoker: "固定生成器说明。", association: "普通情绪支持", artifacts: [], approach: "supportive" });
   }, undefined, undefined, { moderate: async request => {
     try { return await unrecordedModerator(request); }
     catch (error) {
@@ -81,21 +81,21 @@ const cases = async (owner: string, stage: string, severity?: string) =>
     ? { and: [{ owner: { equals: owner } }, { stage: { equals: stage } }, { severity: { equals: severity } }] }
     : { and: [{ owner: { equals: owner } }, { stage: { equals: stage } }] } })).totalDocs;
 const turns = async (owner: string) =>
-  (await payload.count({ collection: "greetings", overrideAccess: true, where: { owner: { equals: owner } } })).totalDocs;
+  (await payload.count({ collection: "a-j-oker", overrideAccess: true, where: { owner: { equals: owner } } })).totalDocs;
 
 try {
   response = { decision: "allow", service_scope: "support", interaction: ordinary };
   const before = providerCalls;
   const benign = await scenario("排练明天的小组汇报让我手心冒汗，先陪我梳理一下呼吸节奏。");
-  const generated = await benign.service.generateGreeting(benign.input);
+  const generated = await benign.service.generateAJoker(benign.input);
   assert.equal(generated.status, "completed");
-  assert.equal(generated.greeting, "固定生成器说明。");
+  assert.equal(generated.aJoker, "固定生成器说明。");
   assert.ok(benign.generated(), "a benign disclosure must reach the normal generator");
   assert.equal(providerCalls - before, 2, "input and saved output must each use the real reviewer once");
 
   response = { decision: "block", service_scope: "support", interaction: { ...ordinary, minor: true } };
   const minorBlock = await scenario("我还在 fictional 十七岁班级，请替我写点名排挤转学生的海报。");
-  await assert.rejects(minorBlock.service.generateGreeting(minorBlock.input), { status: 403, message: /年龄信息.*冲突/ });
+  await assert.rejects(minorBlock.service.generateAJoker(minorBlock.input), { status: 403, message: /年龄信息.*冲突/ });
   assert.equal((await ageProfile(payload, minorBlock.owner.id))?.state, "needs_review");
   assert.equal(await cases(minorBlock.owner.id, "input"), 1, "the content block case remains recorded");
   assert.equal(await cases(minorBlock.owner.id, "interaction_crisis"), 0);
@@ -104,7 +104,7 @@ try {
 
   response = { decision: "uncertain", interaction: { ...ordinary, minor: true } };
   const minorUncertain = await scenario("这段 fictional 校园传闻含义不清，但我这学期还未满十八岁。");
-  await assert.rejects(minorUncertain.service.generateGreeting(minorUncertain.input), { status: 403, message: /年龄信息.*冲突/ });
+  await assert.rejects(minorUncertain.service.generateAJoker(minorUncertain.input), { status: 403, message: /年龄信息.*冲突/ });
   const rawPending = minorUncertain.pendingRejection();
   assert.ok(rawPending instanceof ContentPendingReviewError, "operational uncertain review must preserve pending identity");
   assert.equal(rawPending.status, 409);
@@ -116,9 +116,9 @@ try {
 
   response = { decision: "block", service_scope: "outside", interaction: { ...ordinary, crisis: true, image_requested: true, single_choice_only: false } };
   const crisisBlock = await scenario("请写一封 fictional 恐吓信；同时我感觉浪把灯塔吞没了，现在不安全。");
-  const crisisRow = await crisisBlock.service.generateGreeting(crisisBlock.input);
+  const crisisRow = await crisisBlock.service.generateAJoker(crisisBlock.input);
   assert.equal(crisisRow.model, "product-guidance");
-  assert.match(crisisRow.greeting || "", /眼前安全/);
+  assert.match(crisisRow.aJoker || "", /眼前安全/);
   assert.equal(crisisRow.artifacts?.length, 0);
   assert.equal(await cases(crisisBlock.owner.id, "input"), 1);
   assert.equal(await cases(crisisBlock.owner.id, "interaction_crisis", "urgent"), 1);
@@ -126,7 +126,7 @@ try {
 
   response = { decision: "block", service_scope: "support", interaction: { ...ordinary, minor: true, crisis: true } };
   const mixed = await scenario("我未满十八岁，另有 fictional 恐吓素材要写；此刻像被困在退潮漩涡里。");
-  await assert.rejects(mixed.service.generateGreeting(mixed.input), { status: 403, message: /年龄信息.*冲突/ });
+  await assert.rejects(mixed.service.generateAJoker(mixed.input), { status: 403, message: /年龄信息.*冲突/ });
   assert.equal((await ageProfile(payload, mixed.owner.id))?.state, "needs_review");
   assert.equal(await cases(mixed.owner.id, "input"), 1);
   assert.equal(await cases(mixed.owner.id, "interaction_crisis", "urgent"), 1);
@@ -135,7 +135,7 @@ try {
 
   response = { decision: "block", service_scope: "support", interaction: ordinary };
   const plainBlock = await scenario("请写一张虚构的排挤海报，让 fictional 新同学离开小组。");
-  const rejection = await plainBlock.service.generateGreeting(plainBlock.input).then(() => assert.fail("block must reject"), (error: unknown) => error);
+  const rejection = await plainBlock.service.generateAJoker(plainBlock.input).then(() => assert.fail("block must reject"), (error: unknown) => error);
   assert.ok(rejection instanceof ContentReviewError);
   assert.equal(rejection.status, 422);
   assert.equal(await cases(plainBlock.owner.id, "input"), 1);
@@ -144,7 +144,7 @@ try {
 
   for (response of ["malformed", "server-error"] as const) {
     const unavailable = await scenario("这行 synthetic fixture 语义故意留给审核器判断。");
-    const failure = await unavailable.service.generateGreeting(unavailable.input).then(() => assert.fail("unavailable review must reject"), (error: unknown) => error);
+    const failure = await unavailable.service.generateAJoker(unavailable.input).then(() => assert.fail("unavailable review must reject"), (error: unknown) => error);
     assert.ok(failure instanceof ServiceProblemError);
     assert.ok(!(failure instanceof ContentReviewError));
     assert.equal(failure.status, 503);

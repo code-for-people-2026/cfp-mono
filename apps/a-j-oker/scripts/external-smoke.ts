@@ -65,7 +65,7 @@ try {
       timeout: 90_000,
     },
   );
-  const saved = turnResultSchema.pick({ id: true, status: true, greeting: true }).parse(JSON.parse(result.stdout));
+  const saved = turnResultSchema.pick({ id: true, status: true, aJoker: true }).parse(JSON.parse(result.stdout));
   assert.equal(saved.status, "completed");
   const response = await fetch(`${origin}/api/hello/sessions/${session.id}`, {
     headers,
@@ -75,7 +75,7 @@ try {
   const history = historySchema.parse(rawHistory);
   assert.equal(history.length, 1);
   assert.equal(history[0].mode, "external");
-  assert.equal(history[0].greeting, saved.greeting);
+  assert.equal(history[0].aJoker, saved.aJoker);
   assert.equal(history[0].input.mediaIds.length, 1);
   assert.ok(!JSON.stringify(rawHistory).includes(process.env.DEEPSEEK_API_KEY));
   console.log(
@@ -83,7 +83,7 @@ try {
   );
   console.log(
     JSON.stringify({
-      greeting: saved.greeting,
+      aJoker: saved.aJoker,
       model: history[0].model,
       sessionId: session.id,
     }),

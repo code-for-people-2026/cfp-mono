@@ -1,4 +1,4 @@
-import type { Greeting } from "../domain/contracts";
+import type { AJoker } from "../domain/contracts";
 
 export function imagePromptConstraints() {
   return [
@@ -8,7 +8,7 @@ export function imagePromptConstraints() {
     "未明确的要求保持中立，不虚构身份、资质、联系信息、医疗场所或已发生的行动；明确排除的元素必须全部避免。",
   ].join("\n");
 }
-export function restCardDeliveryError(explicitImageDecision: boolean, reply: Greeting, mediaId: number | undefined, refused: boolean) {
+export function restCardDeliveryError(explicitImageDecision: boolean, reply: AJoker, mediaId: number | undefined, refused: boolean) {
   if (!explicitImageDecision || refused) return;
   if (!mediaId || !reply.artifacts?.some(a => a.kind === "image" && a.source.type === "media" && a.source.mediaId === mediaId))
     return "用户要求的心理支持图片或卡片须交付真实图片；只写一句是画面文字约束。尚未交付本轮真实图片，不能用文字卡或‘已做好’代替。请先完成 decide_image_request、generate_image，再引用返回的 mediaId 保存；若原请求需拒绝则明确拒绝，不生成替代图。";

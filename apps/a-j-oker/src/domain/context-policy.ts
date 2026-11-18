@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Greeting } from "../payload-types";
+import type { AJoker } from "../payload-types";
 import type { MemoryStatus } from "@cfp/a-j-oker-contracts";
 import { inputSchema } from "./contracts";
 import { artifactSummary, legacyArtifactsSchema } from "@cfp/base-chat-protocol";
@@ -50,7 +50,7 @@ export type Reward = z.infer<typeof rewardSchema>;
 export type MemoryTurn = {
   id: number;
   input: { text: string; mediaIds: number[] };
-  greeting: string;
+  aJoker: string;
 };
 
 export function estimateTokens(text: string) {
@@ -63,14 +63,14 @@ export function estimateTokens(text: string) {
   return Math.ceil(ascii / 4 + wide * 1.5);
 }
 export function toMemoryTurn(
-  row: Pick<Greeting, "id" | "input" | "greeting" | "artifacts">,
+  row: Pick<AJoker, "id" | "input" | "aJoker" | "artifacts">,
 ): MemoryTurn {
   const input = inputSchema.parse(row.input);
   return {
     id: row.id,
     input: { text: input.text, mediaIds: input.mediaIds },
-    greeting: [
-      String(row.greeting || ""),
+    aJoker: [
+      String(row.aJoker || ""),
       artifactSummary(legacyArtifactsSchema.parse(row.artifacts ?? [], { jitless: true })),
     ]
       .filter(Boolean)
@@ -85,7 +85,7 @@ export function memoryTokens(summary: string, turns: MemoryTurn[]) {
       (total, turn) =>
         total +
         estimateTokens(
-          JSON.stringify({ input: turn.input, greeting: turn.greeting }),
+          JSON.stringify({ input: turn.input, aJoker: turn.aJoker }),
         ) +
         12,
       0,

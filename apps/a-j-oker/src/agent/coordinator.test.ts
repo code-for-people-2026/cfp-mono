@@ -11,7 +11,7 @@ import type { Part } from "@google/genai";
 import type { GenerationProgress } from "../domain/contracts";
 import type { KnowledgeContext } from "./knowledge";
 import { DEFAULT_AGENT_CONFIGS } from "./default-prompts";
-import { createGreetingAgent } from "./coordinator";
+import { createAJokerAgent } from "./coordinator";
 import { formResponseGuidance } from "./form-response-guidance";
 import { createPsychologyTeam } from "./psychology-agents";
 import { constrainedFormDeliveryError, singleChoiceDeliveryError } from "./single-choice-delivery";
@@ -120,7 +120,7 @@ const plan = {
   needsImmediateSupport: false,
 };
 const reply = {
-  greeting: "且慢，更正已经发出去了；余下的可以慢一点。",
+  aJoker: "且慢，更正已经发出去了；余下的可以慢一点。",
   association: "用户已更正，仍在自责。",
 };
 type Call = { name: string; args: Record<string, unknown> };
@@ -167,10 +167,10 @@ function fixture(
   knowledge?: KnowledgeContext,
   specialistKeys = DEFAULT_AGENT_CONFIGS.slice(1),
   coordinator = DEFAULT_AGENT_CONFIGS[0].prompt,
-  checkDelivery?: Parameters<typeof createGreetingAgent>[0]["checkDelivery"],
+  checkDelivery?: Parameters<typeof createAJokerAgent>[0]["checkDelivery"],
   responseGuidance?: string,
   inputPartsOverride?: Part[],
-  onStage?: Parameters<typeof createGreetingAgent>[0]["onStage"],
+  onStage?: Parameters<typeof createAJokerAgent>[0]["onStage"],
 ) {
   let step = 0;
   const model = new WorkflowModel((request) =>
@@ -189,7 +189,7 @@ function fixture(
     taskStore: new CoordinatorTestTaskStore(),
     requestLedger: new CoordinatorTestLedger(),
   });
-  const agent = createGreetingAgent({
+  const agent = createAJokerAgent({
     configuration: {
       coordinator,
       revision: "fixture",
@@ -259,7 +259,7 @@ const consult = (approach: string) =>
     userFacingIntro: "我先把这件事交给对应的 AI 专家，请稍等。",
   });
 const saveReply = (approach = "supportive") =>
-  call("save_greeting", { ...reply, approach });
+  call("save_a_j_oker", { ...reply, approach });
 
 describe("主 Agent 与心理 subagent 的实际执行", () => {
   it("日常支持直接保存，专家注册为真正的 AgentTool，不额外调用模型", async () => {
@@ -274,7 +274,7 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
 
   it("交接后专家自己的回复直接保存，协调者不改写也不再询问", async () => {
     const expertReply = {
-      greeting: "我会从认知行为的角度和你一起看这件事。先只写下已经发生的事实。",
+      aJoker: "我会从认知行为的角度和你一起看这件事。先只写下已经发生的事实。",
       association: "认知行为方法：先区分事实、想法和感受。",
       approach: "cbt" as const,
       artifacts: [{
@@ -623,7 +623,7 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
     expect(expertAttempts).toBe(3);
     expect(f.model.requests.filter(request => request.toolsDict.submit_psychology_plan)).toHaveLength(3);
     expect(f.save).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ approach: "cbt", greeting: validReply.greeting }),
+      expect.objectContaining({ approach: "cbt", aJoker: validReply.aJoker }),
       expect.objectContaining({ expertId: "cbt", status: "active" }),
     );
     const specialistContext = JSON.parse(
@@ -729,7 +729,7 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
 
   it("眼前危险优先清空作品，不被直接交接根级作品格式纠正阻断", async () => {
     const urgentReply = {
-      greeting: "现在先停下来，我会直接陪你把眼前安全放在第一位。",
+      aJoker: "现在先停下来，我会直接陪你把眼前安全放在第一位。",
       association: "用户有眼前危险，先提供直接安全关照。",
     };
     const f = fixture([[consult("cbt")]], () => [
@@ -775,7 +775,7 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
     expect(instruction).toContain("任何“不直接对用户发言”“只提供方案”“交回主 Agent”等旧流程片段均被本协议替代");
     expect(f.save).toHaveBeenCalledOnce();
     expect(f.save.mock.calls[0]?.[0]).toMatchObject({
-      greeting: reply.greeting,
+      aJoker: reply.aJoker,
       approach: "cbt",
     });
   });
@@ -813,7 +813,7 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
         session?.events.some((event) => event.author === `${approach}_agent`),
       ).toBe(true);
       expect(
-        session?.events.some((event) => event.author === "greeting_agent"),
+        session?.events.some((event) => event.author === "a_j_oker_agent"),
       ).toBe(false);
     },
   );
@@ -869,7 +869,7 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
   });
 
   it("AJ 多作品输出由保存工具校验退回，修正后才持久化", async () => {
-    const invalid = call("save_greeting", {
+    const invalid = call("save_a_j_oker", {
       ...reply,
       artifacts: [
         {
@@ -900,21 +900,21 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
       required: false, allowOther: false,
       options: [{ id: "tired", label: "累积疲惫" }, { id: "pressure", label: "事情太多" }],
     };
-    const invalid = call("save_greeting", {
+    const invalid = call("save_a_j_oker", {
       ...reply,
       artifacts: [{
         kind: "form", id: "reason_form", title: "辨认烦躁", description: "选最接近的一项",
         submitLabel: "选好了", fields: [select, { id: "more", label: "还想补充吗", type: "longText", required: false }],
       }],
     });
-    const corrected = call("save_greeting", {
+    const corrected = call("save_a_j_oker", {
       ...reply,
       artifacts: [{
         kind: "form", id: "reason_form", title: "辨认烦躁", description: "选最接近的一项",
         submitLabel: "选好了", fields: [select],
       }],
     });
-    const checkDelivery = (value: Parameters<NonNullable<Parameters<typeof createGreetingAgent>[0]["checkDelivery"]>>[0]) =>
+    const checkDelivery = (value: Parameters<NonNullable<Parameters<typeof createAJokerAgent>[0]["checkDelivery"]>>[0]) =>
       singleChoiceDeliveryError(true, value);
     const f = fixture([[invalid], [corrected]], undefined, undefined, [], DEFAULT_AGENT_CONFIGS[0].prompt, checkDelivery);
     await f.run();
@@ -957,11 +957,11 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
     expect(returned).not.toContain("private-provider-secret");
     expect(f.save).toHaveBeenCalledTimes(1);
     const savedReply = f.save.mock.calls[0]?.[0] as typeof reply & {
-      greeting: string;
+      aJoker: string;
     };
-    expect(savedReply.greeting.startsWith("与认知行为专家的本轮交接未完成，由阿 J 继续回应，之后可以再试。")).toBe(true);
-    expect(savedReply.greeting).toContain(reply.greeting);
-    expect(savedReply.greeting).not.toContain("private-provider-secret");
+    expect(savedReply.aJoker.startsWith("与认知行为专家的本轮交接未完成，由阿 J 继续回应，之后可以再试。")).toBe(true);
+    expect(savedReply.aJoker).toContain(reply.aJoker);
+    expect(savedReply.aJoker).not.toContain("private-provider-secret");
     expect(f.save.mock.calls[0]?.[1]).toBeUndefined();
   });
 

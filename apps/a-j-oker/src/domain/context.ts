@@ -37,7 +37,7 @@ export class ContextService {
     const row = await this.repo.get("sessions", sessionId);
     const memory = memorySchema.parse(row.memory || {});
     const turns = (
-      await this.repo.all("greetings", {
+      await this.repo.all("a-j-oker", {
         and: [
           { sessionId: { equals: sessionId } },
           { status: { equals: "completed" } },
@@ -71,7 +71,7 @@ export class ContextService {
     const { memory, turns } = await this.read(sessionId);
     return {
       memory: memory.summary,
-      previous: turns.map(({ input, greeting }) => ({ input, greeting })),
+      previous: turns.map(({ input, aJoker }) => ({ input, aJoker })),
     };
   }
   /**
@@ -88,7 +88,7 @@ export class ContextService {
           text: bounded(turn.input.text, 1_000),
           mediaIds: turn.input.mediaIds,
         },
-        greeting: bounded(turn.greeting, 1_000),
+        aJoker: bounded(turn.aJoker, 1_000),
       })),
     };
   }

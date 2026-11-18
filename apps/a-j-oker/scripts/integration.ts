@@ -19,8 +19,8 @@ process.env.DEEPSEEK_API_KEY = "platform-test-secret";
 process.env.HELLO_ADMIN_BOOTSTRAP = "false";
 const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
-const { GreetingService } = await import("../src/domain/greetings");
-const { runGreeting } = await import("../src/agent/runtime");
+const { AJokerService } = await import("../src/domain/a-j-oker");
+const { runAJoker } = await import("../src/agent/runtime");
 const { PayloadSessionService } =
   await import("../src/agent/payload-session-service");
 const { createMcpServer } = await import("../src/server/mcp");
@@ -41,9 +41,9 @@ try {
   const repo = new Repository(payload, owner);
   const model = new ScriptedModel();
   await (await import("./privacy-test-fixture")).consentForFixture(repo);
-  await assert.rejects(async () => new GreetingService(repo, undefined, undefined, undefined, { moderate: syntheticTextReview }).upload(await sharp({ create: { width: 2, height: 2, channels: 3, background: "white" } }).png().toBuffer()), { status: 503 });
+  await assert.rejects(async () => new AJokerService(repo, undefined, undefined, undefined, { moderate: syntheticTextReview }).upload(await sharp({ create: { width: 2, height: 2, channels: 3, background: "white" } }).png().toBuffer()), { status: 503 });
   // Synthetic allow decision exercises image storage, not a real reviewer.
-  const service = new GreetingService(repo, (args) => runGreeting(args, model), undefined, async () => "allow", { moderate: syntheticTextReview });
+  const service = new AJokerService(repo, (args) => runAJoker(args, model), undefined, async () => "allow", { moderate: syntheticTextReview });
   const session = await service.createSession("集成测试");
   const media = await service.upload(
     await sharp({
@@ -60,10 +60,10 @@ try {
     mode: "platform",
     input: { text: "红红火火", mediaIds: [media.id] },
   };
-  const greeting = await service.generateGreeting(first);
-  assert.equal(greeting.status, "completed");
+  const aJoker = await service.generateAJoker(first);
+  assert.equal(aJoker.status, "completed");
   assert.equal(model.requests.length, 1);
-  assert.ok(model.requests[0].toolsDict.save_greeting);
+  assert.ok(model.requests[0].toolsDict.save_a_j_oker);
   assert.ok(model.requests[0].toolsDict.cbt_agent);
   assert.equal(model.requests[0].toolsDict.generate_image, undefined);
   assert.equal(model.requests[0].toolsDict.decide_image_request, undefined);
@@ -74,21 +74,21 @@ try {
     ),
   );
   pass("真实 ADK Runner 调度工具，文字和图片传到模型接口，产物保存");
-  const duplicate = await service.generateGreeting(first);
-  assert.equal(duplicate.id, greeting.id);
+  const duplicate = await service.generateAJoker(first);
+  assert.equal(duplicate.id, aJoker.id);
   assert.equal(model.requests.length, 1);
   await assert.rejects(
-    () => service.generateGreeting({ ...first, input: { text: "不同内容" } }),
+    () => service.generateAJoker({ ...first, input: { text: "不同内容" } }),
     /请求标识/,
   );
   pass("相同请求不重复调用模型，不同内容不能复用幂等键");
 
   let receivedKey = "";
-  const byok = new GreetingService(repo, (args) => {
+  const byok = new AJokerService(repo, (args) => {
     receivedKey = args.apiKey;
-    return runGreeting(args, new ScriptedModel());
+    return runAJoker(args, new ScriptedModel());
   }, undefined, undefined, { moderate: syntheticTextReview });
-  await byok.generateGreeting({
+  await byok.generateAJoker({
     sessionId: session.id,
     requestId: randomUUID(),
     mode: "byok",
@@ -97,7 +97,7 @@ try {
   });
   assert.equal(receivedKey, "private-byok-secret");
   assert.equal(process.env.DEEPSEEK_API_KEY, "platform-test-secret");
-  for (const collection of ["greetings", "adk-sessions"] as const) {
+  for (const collection of ["a-j-oker", "adk-sessions"] as const) {
     const data = JSON.stringify(await repo.list(collection));
     assert.ok(
       !data.includes("private-byok-secret") &&
@@ -106,7 +106,7 @@ try {
   }
   pass("BYOK 请求隔离，密钥未写入产物和 ADK 会话，不修改平台环境变量");
 
-  const other = new GreetingService(
+  const other = new AJokerService(
     new Repository(payload, { id: randomUUID(), auth: "cookie" }), undefined, undefined, undefined, { moderate: syntheticTextReview }
   );
   await assert.rejects(() => other.history(session.id), /无权/);
@@ -117,7 +117,7 @@ try {
         sessionId: session.id,
         requestId: randomUUID(),
         input: { text: "越权" },
-        output: { greeting: "不应成功", association: "测试" },
+        output: { aJoker: "不应成功", association: "测试" },
         model: "external",
       }),
     /无权/,
@@ -133,17 +133,17 @@ try {
   const saved = await freshAdapter.getSession({
     appName: "hello_agent",
     userId: owner.id,
-    sessionId: String(greeting.id),
+    sessionId: String(aJoker.id),
   });
   assert.ok(saved && saved.events.length >= 3);
   assert.ok(!JSON.stringify(saved).includes("inlineData"));
   pass("数据库执行锁防并发，新建 SessionService 可恢复已持久化事件");
 
-  const failed = new GreetingService(repo, async () => {
+  const failed = new AJokerService(repo, async () => {
     throw new Error("private-byok-secret");
   }, undefined, undefined, { moderate: syntheticTextReview });
   await assert.rejects(
-    () => failed.generateGreeting({ ...first, requestId: randomUUID() }),
+    () => failed.generateAJoker({ ...first, requestId: randomUUID() }),
     /生成失败/,
   );
   const all = await service.history(session.id);
@@ -152,7 +152,7 @@ try {
   pass("模型失败留存失败状态，不存供应商异常或假吉祥话");
 
   const server = createMcpServer(
-    new GreetingService(repo, async () => {
+    new AJokerService(repo, async () => {
       throw new Error("外部模式不应调用平台模型");
     }, undefined, undefined, { moderate: syntheticTextReview }),
   );
@@ -166,14 +166,14 @@ try {
   await client.connect(clientTransport);
   const tools = await client.listTools();
   assert.equal(tools.tools.length, 7);
-  const prompt = await client.getPrompt({ name: "hello_greeting" });
+  const prompt = await client.getPrompt({ name: "hello_a_j_oker" });
   const promptText = prompt.messages
     .map((message) =>
       message.content.type === "text" ? message.content.text : "",
     )
     .join("\n");
   assert.ok(promptText.includes("自称「阿 J 先生」"));
-  assert.ok(promptText.includes("hello_save_greeting 工具一次"));
+  assert.ok(promptText.includes("hello_save_a_j_oker 工具一次"));
   assert.ok(promptText.includes("不要让用户选择会话或填写 sessionId"));
   const newerSession = await service.createSession("较新创建但较早活动");
   await repo.update("sessions", newerSession.id, {
@@ -184,22 +184,22 @@ try {
     requestId: randomUUID(),
     input: { text: "春天来了", mediaIds: [media.id] },
     output: {
-      greeting: "愿你春来万事新，心中有暖，脚下有花。",
+      aJoker: "愿你春来万事新，心中有暖，脚下有花。",
       association: "从春天联想到新的开始。",
     },
     model: "external-test-declared",
   };
   const response = await client.callTool({
-    name: "hello_save_greeting",
+    name: "hello_save_a_j_oker",
     arguments: external,
   });
   assert.ok(!response.isError, JSON.stringify(response.content));
-  await client.callTool({ name: "hello_save_greeting", arguments: external });
+  await client.callTool({ name: "hello_save_a_j_oker", arguments: external });
   const externalRows = (await service.history(session.id)).filter(
     (row) => row.mode === "external",
   );
   assert.equal(externalRows.length, 1);
-  assert.equal(externalRows[0].greeting, external.output.greeting);
+  assert.equal(externalRows[0].aJoker, external.output.aJoker);
   const { readToolResult } = await import("./mcp-result");
   const { sessionsSchema } = await import("@cfp/a-j-oker-contracts");
   const listed = readToolResult(
@@ -275,12 +275,12 @@ try {
   );
   const login = await payload.login({ collection: "admins", data: adminData });
   const cmsRows = await payload.find({
-    collection: "greetings",
-    where: { id: { equals: greeting.id } },
+    collection: "a-j-oker",
+    where: { id: { equals: aJoker.id } },
     overrideAccess: false,
     user: login.user,
   });
-  assert.ok(cmsRows.docs.some((item) => item.id === greeting.id));
+  assert.ok(cmsRows.docs.some((item) => item.id === aJoker.id));
   pass(
     "首次注册开关有效，创建首个管理员后拒绝匿名创建第二个，管理员可登录查看产物",
   );
@@ -290,7 +290,7 @@ try {
   persistedFixture = [
     owner.id,
     String(session.id),
-    String(greeting.id),
+    String(aJoker.id),
     String(media.id),
   ];
 } finally {

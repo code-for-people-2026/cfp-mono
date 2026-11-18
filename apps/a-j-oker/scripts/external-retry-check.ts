@@ -15,14 +15,14 @@ process.env.PAYLOAD_SECRET = "external-retry-not-for-deployment";
 process.env.HELLO_DEPLOYED = "false";
 process.env.HELLO_MEDIA_STORAGE = "database";
 const config = await (await import("../payload.config")).default;
-const collection = config.collections.find((item) => item.slug === "greetings");
+const collection = config.collections.find((item) => item.slug === "a-j-oker");
 assert.ok(collection);
 let failCompletion = true;
 let reachedWrittenOutput = false;
 collection.hooks.afterChange.push(async ({ doc, operation, req }) => {
   if (failCompletion && operation === "update" && doc.status === "completed") {
     const written = await req.payload.findByID({
-      collection: "greetings",
+      collection: "a-j-oker",
       id: doc.id,
       req,
     });
@@ -34,11 +34,11 @@ collection.hooks.afterChange.push(async ({ doc, operation, req }) => {
 });
 const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
-const { GreetingService } = await import("../src/domain/greetings");
+const { AJokerService } = await import("../src/domain/a-j-oker");
 const { createMcpServer } = await import("../src/server/mcp");
 const payload = await cms();
 await (await import("../src/cms/seed")).seedAgents(payload);
-const service = new GreetingService(
+const service = new AJokerService(
   new Repository(payload, { id: randomUUID(), auth: "bearer" }),
   async () => {
     throw new Error("外部保存不应调用模型");
@@ -63,13 +63,13 @@ try {
     requestId: randomUUID(),
     input: { text: "故障恢复回归", mediaIds: [] },
     output: {
-      greeting: "愿每次重试都走得稳。",
+      aJoker: "愿每次重试都走得稳。",
       association: "仅为合成回归产物。",
     },
     model: "external-test-declared",
   };
   const save = (input = args) =>
-    client.callTool({ name: "hello_save_greeting", arguments: input });
+    client.callTool({ name: "hello_save_a_j_oker", arguments: input });
   assert.equal((await save()).isError, true);
   assert.equal(
     reachedWrittenOutput,
@@ -84,7 +84,7 @@ try {
   const failed = readToolResult(await history(), historySchema);
   assert.equal(failed.length, 1);
   assert.equal(failed[0].status, "running");
-  assert.equal(failed[0].greeting, null, "完成写入失败后不能留下部分产物");
+  assert.equal(failed[0].aJoker, null, "完成写入失败后不能留下部分产物");
 
   failCompletion = false;
   const retried = await save();
@@ -96,12 +96,12 @@ try {
   const saved = readToolResult(retried, turnResultSchema);
   assert.equal(saved.id, failed[0].id);
   assert.equal(saved.status, "completed");
-  assert.equal(saved.greeting, args.output.greeting);
+  assert.equal(saved.aJoker, args.output.aJoker);
   assert.equal(readToolResult(await save(), turnResultSchema).id, saved.id);
   assert.equal(readToolResult(await history(), historySchema).length, 1, "重试不得创建第二个产物");
   const conflict = await save({
     ...args,
-    output: { ...args.output, greeting: "不能覆盖原产物" },
+    output: { ...args.output, aJoker: "不能覆盖原产物" },
   });
   assert.equal(conflict.isError, true);
   assert.match(readToolResult(conflict, errorSchema).error, /不同内容/);

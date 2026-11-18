@@ -15,17 +15,17 @@ process.env.HELLO_MEMORY_RECOVERY = "preview";
 process.env.DEEPSEEK_API_KEY = "fixture-not-sent-to-provider";
 const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
-const { GreetingService } = await import("../src/domain/greetings");
+const { AJokerService } = await import("../src/domain/a-j-oker");
 const { ContextService } = await import("../src/domain/context");
 const payload = await cms();
 await (await import("../src/cms/seed")).seedAgents(payload);
 try {
   const repo = new Repository(payload, { id: randomUUID(), auth: "miniapp" });
   let generations = 0;
-  const service = new GreetingService(repo, async (args) => {
+  const service = new AJokerService(repo, async (args) => {
     generations++;
     await args.save({
-      greeting: "好".repeat(1000),
+      aJoker: "好".repeat(1000),
       association: "隔离合成回复",
     });
   }, undefined, undefined, { moderate: syntheticTextReview });
@@ -36,7 +36,7 @@ try {
     mode: "platform",
     input: { text: "字".repeat(4000), mediaIds: [] },
   });
-  for (let i = 0; i < 3; i++) await service.generateGreeting(input());
+  for (let i = 0; i < 3; i++) await service.generateAJoker(input());
   let summaries = 0;
   const context = new ContextService(repo, async () => {
     summaries++;
@@ -46,7 +46,7 @@ try {
   assert.equal(full.level, "empty");
   assert.equal(full.advertisement.mode, "disabled");
   assert.equal(full.recoveryMode, "preview");
-  await assert.rejects(() => service.generateGreeting(input()), /空间已满/);
+  await assert.rejects(() => service.generateAJoker(input()), /空间已满/);
   await assert.rejects(() => context.startAd(session.id), /广告尚未配置/);
   // 对外业务接口必须有明确的测试版恢复通道；不伪造一条已完成广告。
   const operation = randomUUID();
@@ -92,7 +92,7 @@ try {
     /未开启/,
   );
   process.env.HELLO_MEMORY_RECOVERY = "preview";
-  await service.generateGreeting(input());
+  await service.generateAJoker(input());
   assert.equal(generations, 4);
   assert.equal((await service.history(session.id)).length, 4);
   const beforeFailure = await context.modelContext(session.id);
@@ -116,17 +116,17 @@ try {
     sessionId: session.id,
     requestId: randomUUID(),
     input: { text: "恢复后外部产物" },
-    output: { greeting: "祝今天顺利", association: "合成数据" },
+    output: { aJoker: "祝今天顺利", association: "合成数据" },
     model: "fixture",
   });
-  const byok = new GreetingService(repo, async (args) => {
+  const byok = new AJokerService(repo, async (args) => {
     assert.equal(args.apiKey, "fixture-byok-not-a-real-key");
     await args.save({
-      greeting: "恢复后自带密钥也可继续",
+      aJoker: "恢复后自带密钥也可继续",
       association: "合成数据",
     });
   }, undefined, undefined, { moderate: syntheticTextReview });
-  await byok.generateGreeting({
+  await byok.generateAJoker({
     ...input(),
     mode: "byok",
     apiKey: "fixture-byok-not-a-real-key",

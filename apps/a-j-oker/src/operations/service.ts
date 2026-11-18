@@ -1,5 +1,5 @@
 import { workingDeadline, COMPLAINT_SLA } from "./deadlines";
-import type { SafetyCase, Greeting } from "../payload-types";
+import type { SafetyCase, AJoker } from "../payload-types";
 import { createHash, randomUUID } from "node:crypto";
 import { type Payload, type PayloadRequest, type TypedUser, type Where } from "payload";
 import { z } from "zod";
@@ -77,13 +77,13 @@ export class OperationsService {
         if (duplicate.totalDocs) throw new AppError(409, "已有申诉正在复核");
       } else if (input.parentReceipt) throw new AppError(400, "举报不能指定申诉编号");
       const turnId = parent?.turnId ?? input.turnId;
-      let turn: Greeting | undefined;
+      let turn: AJoker | undefined;
       if (turnId) {
-        turn = (await this.payload.find({ collection: "greetings", overrideAccess: true, req, limit: 1, where: { and: [{ id: { equals: turnId } }, { owner: { equals: owner.id } }] } })).docs[0];
+        turn = (await this.payload.find({ collection: "a-j-oker", overrideAccess: true, req, limit: 1, where: { and: [{ id: { equals: turnId } }, { owner: { equals: owner.id } }] } })).docs[0];
         if (!turn) throw new AppError(404, "关联轮次不存在或不属于本人");
       }
       const lastReview = turn?.requestKey ? (await this.payload.find({ collection: "safety-audit", overrideAccess: true, req, limit: 1, sort: "-id", where: { and: [{ target: { equals: turn.requestKey } }, { event: { like: "moderation." } }] } })).docs[0]?.metadata as Record<string, unknown> | undefined : undefined;
-      const row = await this.createCase({ owner: owner.id, source: input.kind, category: input.category, stage: parent?.stage || "user_report", parentId: parent?.id, turnId, sessionId: turn?.sessionId ?? parent?.sessionId, mediaId: parent?.mediaId, modelVersion: parent?.modelVersion || (typeof lastReview?.model === "string" ? lastReview.model : undefined) || turn?.model || "未记录", ruleVersion: parent?.ruleVersion || (typeof lastReview?.rule === "string" ? lastReview.rule : undefined) || "历史轮次未记录", lexiconVersion: parent?.lexiconVersion || (typeof lastReview?.lexicon === "string" ? lastReview.lexicon : undefined) || "历史轮次未记录" }, turn ? `举报说明：${input.description.slice(0, 550)}\n关联回应最小片段：${String(turn.greeting || turn.error || "尚无回应").slice(0, 550)}` : input.description, req);
+      const row = await this.createCase({ owner: owner.id, source: input.kind, category: input.category, stage: parent?.stage || "user_report", parentId: parent?.id, turnId, sessionId: turn?.sessionId ?? parent?.sessionId, mediaId: parent?.mediaId, modelVersion: parent?.modelVersion || (typeof lastReview?.model === "string" ? lastReview.model : undefined) || turn?.model || "未记录", ruleVersion: parent?.ruleVersion || (typeof lastReview?.rule === "string" ? lastReview.rule : undefined) || "历史轮次未记录", lexiconVersion: parent?.lexiconVersion || (typeof lastReview?.lexicon === "string" ? lastReview.lexicon : undefined) || "历史轮次未记录" }, turn ? `举报说明：${input.description.slice(0, 550)}\n关联回应最小片段：${String(turn.aJoker || turn.error || "尚无回应").slice(0, 550)}` : input.description, req);
       return safePublic(row);
     });
   }
@@ -196,10 +196,10 @@ export class OperationsService {
             if (row.source !== "moderation" || !["input", "output"].includes(row.stage) || row.mediaId)
               throw new AppError(409, "此动作仅用于尚未生成内容的文本审核请求");
             if (row.turnId) {
-              const turn = await this.payload.findByID({ collection: "greetings", id: row.turnId, overrideAccess: true, req });
+              const turn = await this.payload.findByID({ collection: "a-j-oker", id: row.turnId, overrideAccess: true, req });
               // Do not close a running/stored task with a bookkeeping-only action.
               // Existing content and resumable images require quarantine instead.
-              if (turn.owner !== row.owner || turn.status !== "failed" || turn.greeting || turn.artifacts?.length || turn.imageGeneration)
+              if (turn.owner !== row.owner || turn.status !== "failed" || turn.aJoker || turn.artifacts?.length || turn.imageGeneration)
                 throw new AppError(409, "已有生成内容或未结束的任务，请使用内容隔离处置");
             }
           }

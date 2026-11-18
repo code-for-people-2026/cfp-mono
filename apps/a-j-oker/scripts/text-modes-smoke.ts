@@ -45,9 +45,9 @@ try {
   const session = sessionSchema.parse(await post("sessions", { title: "隔离三种文字聊天验收" }));
   for (const mode of (externalOnly ? [] : ["platform", "byok"] as const)) {
     stage = mode;
-    const turn = turnResultSchema.parse(await post("greet", { sessionId: session.id, requestId: randomUUID(), mode, ...(mode === "byok" ? { apiKey: process.env.DEEPSEEK_API_KEY } : {}), input: { text: "今天把桌面收拾整齐了，感觉轻松了一点。请简短回应。", mediaIds: [] } }));
+    const turn = turnResultSchema.parse(await post("a-j-oker", { sessionId: session.id, requestId: randomUUID(), mode, ...(mode === "byok" ? { apiKey: process.env.DEEPSEEK_API_KEY } : {}), input: { text: "今天把桌面收拾整齐了，感觉轻松了一点。请简短回应。", mediaIds: [] } }));
     assert.equal(turn.status, "completed");
-    assert.ok(turn.greeting);
+    assert.ok(turn.aJoker);
     console.log(`PASS real ${mode} text generation`);
   }
   stage = "external-token";

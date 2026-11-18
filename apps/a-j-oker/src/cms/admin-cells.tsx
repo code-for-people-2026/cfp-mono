@@ -40,7 +40,7 @@ function Summary({ props, text }: { props: CellProps; text: string }) {
 export function InputCell(props: CellProps) {
   return <Summary props={props} text={inputSummary(props.cellData)} />;
 }
-export function GreetingCell(props: CellProps) {
+export function AJokerCell(props: CellProps) {
   return (
     <Summary
       props={props}

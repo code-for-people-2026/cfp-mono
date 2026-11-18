@@ -29,21 +29,21 @@ if (process.argv.includes("--verify-only")) {
   const headers = { Origin: origin, Cookie: cookie, "Content-Type": "application/json" };
   const post = (route: string, data: unknown) => json(`/api/hello/${route}`, { method: "POST", headers, body: JSON.stringify(data) });
   const session = sessionSchema.parse(await post("sessions", { title: "ECS 部署验收（测试数据）" }));
-  const platform = turnResultSchema.parse(await post("greet", {
+  const platform = turnResultSchema.parse(await post("a-j-oker", {
     sessionId: session.id, requestId: randomUUID(), mode: "platform",
     input: { text: "部署验收：我的第一个小程序今天连接上自己的服务器了，请给我一句实在的鼓励。", mediaIds: [] },
   }));
   assert.equal(platform.status, "completed");
-  assert.ok(platform.greeting && platform.greeting.length > 1);
-  console.log(`平台真实回复：${platform.greeting}`);
+  assert.ok(platform.aJoker && platform.aJoker.length > 1);
+  console.log(`平台真实回复：${platform.aJoker}`);
   const image = await sharp({ create: { width: 128, height: 128, channels: 3, background: "#ef5934" } }).png().toBuffer();
   const media = uploadResultSchema.parse(await post("upload", { base64: image.toString("base64") }));
-  const byok = turnResultSchema.parse(await post("greet", {
+  const byok = turnResultSchema.parse(await post("a-j-oker", {
     sessionId: session.id, requestId: randomUUID(), mode: "byok", apiKey: process.env.DEEPSEEK_API_KEY,
     input: { text: "部署验收：这张暖橙色测试图让你想到什么？请说一句吉祥话。", mediaIds: [media.id] },
   }));
   assert.equal(byok.status, "completed");
-  console.log(`BYOK 图文真实回复：${byok.greeting}`);
+  console.log(`BYOK 图文真实回复：${byok.aJoker}`);
   saved = { cookie, sessionId: session.id, ids: [platform.id, byok.id] };
   await writeFile(recordPath, JSON.stringify(saved), { mode: 0o600 });
 }
@@ -56,11 +56,11 @@ const admin = z.object({ token: z.string() }).parse(await json("/api/admins/logi
   method: "POST", headers: { "Content-Type": "application/json", Origin: origin },
   body: JSON.stringify({ email: process.env.HELLO_ADMIN_EMAIL, password: process.env.HELLO_ADMIN_PASSWORD }),
 }));
-const records = await json(`/api/greetings?where[sessionId][equals]=${saved.sessionId}&depth=0`, { headers: { Authorization: `JWT ${admin.token}` } });
+const records = await json(`/api/a-j-oker?where[sessionId][equals]=${saved.sessionId}&depth=0`, { headers: { Authorization: `JWT ${admin.token}` } });
 assert.equal(z.object({ totalDocs: z.number() }).parse(records).totalDocs, saved.ids.length);
 assert.ok(!JSON.stringify(records).includes(process.env.DEEPSEEK_API_KEY || "missing-secret"));
 const config = settingsSchema.parse(await json("/api/hello/config"));
 assert.equal(config.advertisement.mode, "disabled");
-const unauthorized = await fetch(`${origin}/api/greetings`);
+const unauthorized = await fetch(`${origin}/api/a-j-oker`);
 assert.ok([401, 403].includes(unauthorized.status));
 console.log(`HTTPS、平台/BYOK 产物、CMS 管理员读取、未登录隔离、远程广告关闭验收通过。测试会话 ${saved.sessionId}。`);

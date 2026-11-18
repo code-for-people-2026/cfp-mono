@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import type { Payload } from "payload";
 import type { InteractionAssessment, Moderator, ModerationRequest, ModerationVerdict } from "../src/domain/moderation";
 import type { Repository } from "../src/cms/repository";
-import type { GreetingService } from "../src/domain/greetings";
+import type { AJokerService } from "../src/domain/a-j-oker";
 
 assert.ok(process.argv.includes("--live"), "Requires --live; invokes the real product model");
 assert.ok(process.env.DEEPSEEK_API_KEY, "Product model credential required");
@@ -46,7 +46,7 @@ const sourceFiles = [
   "src/agent/configuration.ts",
   "src/agent/coordinator.ts",
   "src/models/deepseek.ts",
-  "src/domain/greetings.ts",
+  "src/domain/a-j-oker.ts",
   "src/operations/moderation.ts",
   "src/interaction/service.ts",
 ] as const;
@@ -133,7 +133,7 @@ let payload: Payload | undefined;
 try {
   const { cms } = await import("../src/cms/client");
   const { Repository } = await import("../src/cms/repository");
-  const { GreetingService } = await import("../src/domain/greetings");
+  const { AJokerService } = await import("../src/domain/a-j-oker");
   const { seedSyntheticAge } = await import("./synthetic-age");
   const { PrivacyService } = await import("../src/privacy/service");
   const { privacyPolicy } = await import("../src/privacy/policy");
@@ -186,7 +186,7 @@ try {
         throw error;
       }
     };
-    const service: GreetingService = new GreetingService(repo, undefined, undefined, undefined, { moderate: moderator });
+    const service: AJokerService = new AJokerService(repo, undefined, undefined, undefined, { moderate: moderator });
     const session = await service.createSession();
     const started = Date.now();
     let resultModel: string | null = null;
@@ -195,7 +195,7 @@ try {
     let failureKind: string | undefined;
 
     try {
-      const result = await service.generateGreeting({
+      const result = await service.generateAJoker({
         sessionId: session.id,
         requestId: randomUUID(),
         mode: "platform",
@@ -210,7 +210,7 @@ try {
 
       assert.equal(result.status, "completed");
       assert.notEqual(result.model, "product-guidance", "Ordinary disclosure was intercepted");
-      assert.ok(result.greeting);
+      assert.ok(result.aJoker);
       assert.ok(!result.artifacts?.some((artifact) => artifact.kind === "image"), "Unrequested image");
       assert.equal((await ageProfile(payload, owner.id))?.state, "adult");
       assert.equal((await repo.get("sessions", session.id)).memory, null);
