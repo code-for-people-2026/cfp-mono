@@ -1,6 +1,6 @@
-import "./load-local-env";
 import { randomUUID, createHash } from "node:crypto";
-import { readFile, writeFile, appendFile, mkdir, copyFile } from "node:fs/promises";
+import { readFile, writeFile, appendFile, mkdir } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { parseEnv } from "node:util";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -8,23 +8,45 @@ import type { ImageProvider } from "../src/images/wan";
 import type { ImageReviewer } from "../src/operations/image-review";
 import { openBudget, reserveForRequest } from "./safety/budget";
 import { fingerprint, type SafetyCase } from "./safety/bank";
+import { printFilingPreflight, verifyFilingRetest } from "./safety/filing";
 
-const [samplePath, priorBudget, outputDir, consent, imageEnvArg, mode, resumeDb, resumeId] = process.argv.slice(2);
+const [samplePath, priorBudget, outputDir, consent, imageEnvArg, ...optionalArguments] = process.argv.slice(2);
+const preflightFlagCount = optionalArguments.filter(argument => argument === "--preflight-only").length;
+if (preflightFlagCount > 1) throw new Error("Invalid mode arguments");
+const modeArguments = optionalArguments.filter(argument => argument !== "--preflight-only");
+const preflightOnly = preflightFlagCount === 1;
+if (preflightOnly && modeArguments.length !== 1) throw new Error("Preflight requires exactly the filing-retest mode");
+const [rawMode, ...recoveryArguments] = modeArguments;
+const mode = rawMode;
 const imageEnv = imageEnvArg === "-" ? undefined : imageEnvArg;
-if (mode && !["--full-bank", "--finish-bank", "--resume-stored"].includes(mode)) throw new Error("Unsupported evaluation mode");
+if (mode && !["--full-bank", "--finish-bank", "--resume-stored", "--filing-retest"].includes(mode)) throw new Error("Unsupported evaluation mode");
+const filingRetest = mode === "--filing-retest";
+if (preflightOnly && mode !== "--filing-retest") throw new Error("Preflight requires exactly the filing-retest mode");
+if (mode !== "--resume-stored" && recoveryArguments.length) throw new Error("Unexpected recovery arguments");
 const stopCny = ["--finish-bank", "--resume-stored"].includes(mode) ? 49.5 : 45;
-if (mode === "--resume-stored" && (!resumeDb || !/^\d+$/.test(resumeId))) throw new Error("Missing stored recovery fixture");
-if (mode !== "--resume-stored" && (resumeDb || resumeId)) throw new Error("Unexpected recovery arguments");
+const [resumeDb, resumeId] = recoveryArguments;
+if (mode === "--resume-stored" && (recoveryArguments.length !== 2 || !resumeDb || !/^\d+$/.test(resumeId))) throw new Error("Missing stored recovery fixture");
 const imageLimit = mode === "--full-bank" ? 200 : 6;
 const reviewLimit = mode === "--full-bank" ? 400 : 20;
 if (!samplePath || !priorBudget || !outputDir || consent !== "--live-within-50-cny") throw new Error("Usage: run-safety-regression sample.jsonl prior-budget.json NEW-output-directory --live-within-50-cny");
-if (!process.env.DEEPSEEK_API_KEY) throw new Error("DeepSeek configuration missing; no live evaluation performed");
 const items: SafetyCase[] = (await readFile(samplePath, "utf8")).trim().split("\n").map(line => JSON.parse(line));
 if (mode === "--resume-stored" && (items.length !== 1 || items[0].turns.length !== 1)) throw new Error("Recovery requires exactly one original case");
-if (!items.length || items.length > 500 || items.some(item => (item.modality !== "text" && !(imageEnv && item.modality === "image")) || item.split !== "development" || !item.turns.length || item.turns.some(t => typeof t !== "string" || t.length > 4000))) throw new Error("Invalid development sample");
+if (!items.length || items.length > 500 || items.some(item => (item.modality !== "text" && !(imageEnv && item.modality === "image")) || (!filingRetest && item.split !== "development") || !item.turns.length || item.turns.some(t => typeof t !== "string" || t.length > 4000))) throw new Error(filingRetest ? "Invalid filing sample" : "Invalid development sample");
+// The adjacent manifest must be sample.jsonl.manifest.json. Preflight verifies
+// frozen sample/bank/code/budget provenance without loading credentials or env.
+const filingVerification = filingRetest ? verifyFilingRetest({
+  manifestPath: `${samplePath}.manifest.json`, samplePath, priorBudgetPath: priorBudget,
+}) : undefined;
+if (preflightOnly) {
+  printFilingPreflight(filingVerification!);
+  process.exit(0);
+}
+await import("./load-local-env");
+if (!process.env.DEEPSEEK_API_KEY) throw new Error("DeepSeek configuration missing; no live evaluation performed");
 // Wan may throttle eight concurrent submissions; keep image batches and mixed
 // retries at two workers while preserving the real application behavior.
-const concurrency = mode === "--full-bank" ? (items.some(item => item.modality === "image") ? 2 : 8) : 1;
+const hasImageItems = items.some(item => item.modality === "image");
+const concurrency = mode === "--full-bank" ? (hasImageItems ? 2 : 8) : filingRetest ? (hasImageItems ? 2 : 4) : 1;
 if (imageEnv) {
   const config = parseEnv(await readFile(imageEnv, "utf8"));
   for (const key of ["DASHSCOPE_API_KEY", "HELLO_IMAGE_WORKSPACE_ID", "HELLO_GREEN_ACCESS_KEY_ID", "HELLO_GREEN_ACCESS_KEY_SECRET"]) {
@@ -34,6 +56,7 @@ if (imageEnv) {
   process.env.HELLO_IMAGE_REVIEW_MODE = "aliyun-green";
 }
 await mkdir(outputDir); // Never overwrite prior evidence or silently resume a partial case.
+if (filingVerification) await writeFile(path.join(outputDir, "filing-retest-manifest.json"), filingVerification.manifestJson);
 const budget = openBudget(priorBudget, stopCny);
 const startReserve = budget.total;
 process.env.HELLO_DATABASE_URI = `file:${path.resolve(outputDir, "isolated.db")}`;
@@ -174,7 +197,8 @@ try {
   try { await seedAgents(template); } finally { await template.destroy(); }
   for (let worker = 0; worker < concurrency; worker++) {
     const workerPath = path.resolve(outputDir, `worker-${worker}.db`);
-    await copyFile(mode === "--resume-stored" ? resumeDb : path.resolve(outputDir, "isolated.db"), workerPath);
+    // Copy committed WAL pages too; copying only the main file can yield an empty schema.
+    execFileSync("/usr/bin/python3", ["-c", "import sqlite3,sys; s=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True); d=sqlite3.connect(sys.argv[2]); s.backup(d); d.close(); s.close()", mode === "--resume-stored" ? resumeDb : path.resolve(outputDir, "isolated.db"), workerPath]);
     const activePayload = await new BasePayload().init({ config: { ...baseConfig,
       db: { ...sqliteAdapter({ client: { url: `file:${workerPath}` }, transactionOptions: {}, push: false }), allowIDOnCreate: false, name: "sqlite" },
     } });
@@ -229,7 +253,7 @@ try {
 } finally {
   globalThis.fetch = nativeFetch;
   const peakEstimate = (usage.hit * 0.04 + usage.miss * 2 + usage.completion * 8) / 1e6;
-  await writeFile(path.join(outputDir, "summary.json"), JSON.stringify({ at: new Date().toISOString(), completedCases, totalCases: items.length, states, calls, usage, imageSubmissions, imageReviews, imageReservedCny: imageSubmissions * 0.25 + imageReviews * 0.01, initialReservationCny: startReserve, cumulativeReservedUpperCny: budget.total, newMeasuredPeakEstimateCny: peakEstimate, missingUsageCalls: calls - usage.requestsWithUsage, stopped, interrupted, note: "公开高峰单价与接口usage估算，非账单。缺少usage的请求及图片服务保留完整预算预留。人工结论待评阅，不计算正式合格率。" }, null, 2));
+    await writeFile(path.join(outputDir, "summary.json"), JSON.stringify({ at: new Date().toISOString(), mode: mode ?? "development", filingRetest: filingVerification ? { manifestSha256: filingVerification.manifestSha256, sampleSha256: filingVerification.sampleSha256, bankSha256: filingVerification.bankSha256, totalBankCount: filingVerification.totalBankCount, sourceApp: filingVerification.sourceApp, codeSnapshotSha256: filingVerification.codeSnapshotSha256, priorBudgetSha256: filingVerification.priorBudgetSha256, frozenManifest: "filing-retest-manifest.json" } : undefined, completedCases, totalCases: items.length, states, calls, usage, imageSubmissions, imageReviews, imageReservedCny: imageSubmissions * 0.25 + imageReviews * 0.01, initialReservationCny: startReserve, cumulativeReservedUpperCny: budget.total, newMeasuredPeakEstimateCny: peakEstimate, missingUsageCalls: calls - usage.requestsWithUsage, stopped, interrupted, note: "公开高峰单价与接口usage估算，非账单。缺少usage的请求及图片服务保留完整预算预留。人工结论与实际图片复核待完成，不计算正式合格率。" }, null, 2));
   try { await Promise.allSettled(payloads.map(p => p.destroy())); } finally { budget.close(); }
   process.off("SIGTERM", stopAfterTurn); process.off("SIGINT", stopAfterTurn);
 }

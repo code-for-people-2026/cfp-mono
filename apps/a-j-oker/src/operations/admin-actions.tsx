@@ -92,27 +92,32 @@ export function CreateOperation({ kind, admin }: { kind: "rules" | "settings" | 
   </details>;
 }
 
-export function CaseActions({ row, administrator, userId, admin }: { row: Row; administrator: boolean; userId: number | string; admin: string }) {
+export function CaseActions({ row, administrator, appealReviewer = false, userId, admin }: { row: Row; administrator: boolean; appealReviewer?: boolean; userId: number | string; admin: string }) {
   const [emergency, setEmergency] = useState<Row>();
   const [evidence, setEvidence] = useState<Record<string, unknown>>();
   const own = row.assignedTo === userId;
   const ageReview = row.stage === "age_review";
+  const ownResolved = appealReviewer && row.status === "resolved" && row.lastReviewer != null && String(row.lastReviewer) === String(userId);
+  const appealEligible = !appealReviewer || row.parentId != null || row.status === "review" || ownResolved;
+  const ageAppeal = appealReviewer && (row.parentId != null || row.lastReviewer != null);
   const actions: [string, string][] = [];
   if (administrator && row.retentionPurgedAt && row.retentionReviewNeeded) actions.push(["review_purged_restriction", "新建独立生效限制复核"]);
-  if (!row.retentionPurgedAt && row.status !== "resolved" && (!row.assignedTo || own || administrator)) actions.push(["claim", "领取并受理"]);
-  if (!row.retentionPurgedAt && (own || administrator)) actions.push(["review", "转交独立复核"]);
-  if (!row.retentionPurgedAt && own && ["in_progress", "review"].includes(String(row.status))) {
-    if (ageReview && administrator) {
+  if (!row.retentionPurgedAt && row.status !== "resolved" && appealEligible && (!row.assignedTo || own || administrator)) actions.push(["claim", "领取并受理"]);
+  if (!row.retentionPurgedAt && appealEligible && (!appealReviewer || row.status !== "resolved" || row.parentId != null) && (own || administrator)) actions.push(["review", "转交独立复核"]);
+  if (!row.retentionPurgedAt && own && appealEligible && ["in_progress", "review"].includes(String(row.status))) {
+    if (ageReview && (administrator || ageAppeal)) {
       actions.push(["permit_age_reverification", "批准发起一次新的本人核验"], ["maintain_age_restriction", "维持年龄限制"], ["restore_age_access", "直接解除年龄限制"]);
     } else if (!ageReview && row.source === "moderation" && ["input", "output"].includes(String(row.stage)) && !row.mediaId)
       actions.push(["reject", "拒绝未生成请求并结案"]);
     if (!ageReview) {
       actions.push(["dismiss", "无需限制，结案"]);
       if (row.turnId || row.mediaId) actions.push(["quarantine", "隔离已存内容并结案"], ["restore", "恢复原案件隔离的内容"]);
-      if (administrator) actions.push(["restrict", "限制该身份生成"], ["unrestrict", "解除原案件生成限制"]);
+      actions.push(...(administrator
+        ? [["restrict", "限制该身份生成"], ["unrestrict", "解除原案件生成限制"]] as [string, string][]
+        : appealReviewer && appealEligible ? [["unrestrict", "解除原案件生成限制"]] as [string, string][] : []));
     }
   }
-  if (!row.retentionPurgedAt && own && row.status === "resolved") actions.push(["feedback", "向本人提供处理结果"]);
+  if (!row.retentionPurgedAt && own && appealEligible && row.status === "resolved") actions.push(["feedback", "向本人提供处理结果"]);
   if (administrator && !row.retentionPurgedAt) {
     actions.push(["extend_retention", "指定或延长有限留存期限"]);
     if (row.retentionReviewNeeded && row.retainUntil) actions.push(["activate_retention", "确认历史迁移期限并启动到期清理"]);
@@ -123,9 +128,9 @@ export function CaseActions({ row, administrator, userId, admin }: { row: Row; a
       setEmergency(undefined); setEmergency(await request(`cases/${row.id}/emergency-contact`, body));
     }}><p>孙逢负责人工处置。不提供自动拨号；飞书通知只有完成配置及实际收件确认后才启用。消息发送成功不代表人工已读或受理，须本人查看队列并实际联络。只在必要的紧急处置中使用联系人资料。</p></ActionPanel>}
     {emergency && <div role="status"><p>{String(emergency.notice)}</p>{emergency.contact ? <p>{String((emergency.contact as { name: string }).name)} · {String((emergency.contact as { phone: string }).phone)}</p> : <p>未展示联系人资料。</p>}</div>}
-    <ActionPanel title="按需查看最小证据" fields={[{ ...reason, max: 500 }]} button="查看证据并留痕" disabled={!own && !administrator} submit={async (body) => {
+    <ActionPanel title="按需查看最小证据" fields={[{ ...reason, max: 500 }]} button="查看证据并留痕" disabled={(appealReviewer && !appealEligible) || (!own && !administrator)} submit={async (body) => {
       setEvidence(undefined); setEvidence(await request(`cases/${row.id}/evidence`, body));
-    }}><p>{!own && !administrator ? "请先领取案件，再按需查看证据。" : "访问须填写具体理由，访问记录会写入审计。"}</p></ActionPanel>
+    }}><p>{appealReviewer ? (appealEligible ? "独立申诉复核员只能访问申诉或待复核案件的必要证据。" : "该案件不是申诉或待复核案件，独立申诉复核员不能领取或查看证据。") : !own && !administrator ? "请先领取案件，再按需查看证据。" : "访问须填写具体理由，访问记录会写入审计。"}</p></ActionPanel>
     {evidence && <div className="safety-evidence" role="status">{evidence.unavailable ? String(evidence.message) : <>
       {evidence.provenance && <><h3>证据来源说明</h3><p>{String(evidence.provenance)}</p></>}
       {evidence.conversation ? <>
@@ -146,7 +151,7 @@ export function CaseActions({ row, administrator, userId, admin }: { row: Row; a
       const result = await request(`cases/${row.id}/action`, { ...body, revision: row.revision });
       if (body.action === "review_purged_restriction" && result.id !== row.id) window.location.assign(recordURL("safety-cases", result.id, admin));
       else window.location.reload();
-    }}><p>当前状态：{operationLabels[String(row.status)]}。来源：{caseOperationLabel(String(row.source), String(row.stage))}。{row.retentionPurgedAt ? row.retentionReviewNeeded ? "案件自由文本与证据已清理，但限制仍生效；管理员可新建独立复核案件，旧案不会重新写入自由文本。" : "案件自由文本与证据已清理；如需后续处置，必须新建独立案件。" : row.retentionReviewNeeded ? "本案件已明确标记为历史留存迁移待复核；有期限时须确认后才启动到期清理。" : ""}{row.legalHold ? ` 法律留存复核日：${String(row.holdReviewAt || "未设置（须立即补充）")}。` : ` 证据期限：${String(row.retainUntil || "待复核")}。`}{ageReview ? " 年龄复核可选择允许本人重新核验、维持限制，或由系统管理员直接解除年龄限制。直接解除会记录人工核验来源，不冒充供应商结果，也不解除内容限制；必须填写理由和给本人的结果。" : "处置与证据访问都沿用服务器权限校验；申诉和复核须由原处置人以外的人员完成。"}</p></ActionPanel>}
+    }}><p>当前状态：{operationLabels[String(row.status)]}。来源：{caseOperationLabel(String(row.source), String(row.stage))}。{row.retentionPurgedAt ? row.retentionReviewNeeded ? "案件自由文本与证据已清理，但限制仍生效；管理员可新建独立复核案件，旧案不会重新写入自由文本。" : "案件自由文本与证据已清理；如需后续处置，必须新建独立案件。" : row.retentionReviewNeeded ? "本案件已明确标记为历史留存迁移待复核；有期限时须确认后才启动到期清理。" : ""}{row.legalHold ? ` 法律留存复核日：${String(row.holdReviewAt || "未设置（须立即补充）")}。` : ` 证据期限：${String(row.retainUntil || "待复核")}。`}{appealReviewer ? (appealEligible ? "独立申诉复核员可处理已有父案、待复核案件或本人刚完成的复核；年龄动作只限已有人工决定的年龄复核（包括申诉）。" : "独立申诉复核员只能处理已有父案、待复核案件或本人刚完成的复核；不能作出首次决定、新增生成限制或管理账号、规则、留存。") : ageReview ? " 年龄复核可选择允许本人重新核验、维持限制，或由系统管理员直接解除年龄限制。首次年龄决定仍仅限系统管理员；独立申诉复核员只能处理已有人工决定的年龄复核（包括申诉）。直接解除会记录人工核验来源，不冒充供应商结果，也不解除内容限制；必须填写理由和给本人的结果。" : "处置与证据访问都沿用服务器权限校验；申诉和复核须由原处置人以外的人员完成。"}</p></ActionPanel>}
   </div>;
 }
 
