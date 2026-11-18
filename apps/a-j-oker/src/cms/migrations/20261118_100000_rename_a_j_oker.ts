@@ -131,18 +131,9 @@ function renameA2ASnapshot(snapshot: JsonValue): JsonValue {
   };
 }
 
-/** Rename the response property only in the safety evaluation output envelope. */
+/** Rename the response property only at the root of a safety evaluation output. */
 function renameSafetyEvaluationOutput(value: JsonValue): JsonValue {
-  if (!isJsonObject(value) || !isJsonObject(value.output)) return value;
-  return {
-    ...value,
-    output: Object.fromEntries(
-      Object.entries(value.output).map(([key, item]) => [
-        key === "greeting" ? "aJoker" : key,
-        item,
-      ]),
-    ),
-  };
+  return isJsonObject(value) ? renameReplyKey(value) : value;
 }
 
 async function renameJsonKeys(

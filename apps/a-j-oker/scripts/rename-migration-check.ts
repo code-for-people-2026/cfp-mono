@@ -189,14 +189,14 @@ try {
       '{not-json', '2026-11-18T00:00:00Z', '2026-11-18T00:00:00Z')`);
 
   const evaluationOutput = {
-    state: "completed",
-    turnId: 1,
-    output: {
-      greeting: "评测回应保留 save_greeting / greeting_agent",
-      score: 11,
-      skipped: false,
-      empty: null,
-      literal: "save_greeting / greeting_agent",
+    greeting: "评测回应保留 save_greeting / greeting_agent",
+    score: 11,
+    skipped: false,
+    empty: null,
+    literal: "save_greeting / greeting_agent",
+    form: {
+      fields: [{ id: "greeting", label: "评测嵌套表单字段保留 greeting" }],
+      values: { greeting: "评测嵌套表单值保留 greeting" },
     },
   };
   await db.run(sql`INSERT INTO safety_evaluations (item_id, state, input, output, owner, updated_at, created_at)
@@ -335,13 +335,38 @@ try {
   );
   assert.equal(evaluationRows.find((item) => item.item_id === 2)!.output, "{not-json");
   const migratedEvaluation = JSON.parse(evaluationRows.find((item) => item.item_id === 1)!.output) as {
-    output: { aJoker?: string; greeting?: string; score: number; skipped: boolean; empty: null; literal: string };
+    aJoker?: string;
+    greeting?: string;
+    score: number;
+    skipped: boolean;
+    empty: null;
+    literal: string;
+    form: { fields: Array<{ id: string; label: string }>; values: { greeting: string } };
   };
-  assert.equal(migratedEvaluation.output.aJoker, "评测回应保留 save_greeting / greeting_agent");
-  assert.equal(migratedEvaluation.output.greeting, undefined);
-  assert.equal(migratedEvaluation.output.score, 11);
-  assert.equal(migratedEvaluation.output.skipped, false);
-  assert.equal(migratedEvaluation.output.empty, null);
+  assert.equal(migratedEvaluation.aJoker, "评测回应保留 save_greeting / greeting_agent");
+  assert.equal(migratedEvaluation.greeting, undefined);
+  assert.equal(migratedEvaluation.score, 11);
+  assert.equal(migratedEvaluation.skipped, false);
+  assert.equal(migratedEvaluation.empty, null);
+  assert.equal(migratedEvaluation.literal, "save_greeting / greeting_agent");
+  assert.deepEqual(
+    migratedEvaluation.form,
+    {
+      fields: [{ id: "greeting", label: "评测嵌套表单字段保留 greeting" }],
+      values: { greeting: "评测嵌套表单值保留 greeting" },
+    },
+  );
+
+  const migratedEvaluationRecord = await oldPayload.findByID({
+    collection: "safety-evaluations",
+    id: 1,
+    overrideAccess: true,
+    depth: 0,
+  });
+  assert.equal(
+    (migratedEvaluationRecord.output as { aJoker?: string }).aJoker,
+    "评测回应保留 save_greeting / greeting_agent",
+  );
 
   const legacy = await oldPayload.findByID({
     collection: "a-j-oker",
