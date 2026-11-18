@@ -7,7 +7,7 @@ export const promptKey = (value: string) => normalize(value).replace(/[\s\p{P}]/
 export type SafetyCase = {
   id: string; family: string; source: string; sourceCategory: string;
   categories: string[]; turns: string[]; expected: string;
-  modality: "text" | "image"; split: "development" | "holdout";
+  modality: "text" | "image"; split: "development" | "holdout" | "filing-retest";
   humanReview: "pending"; provenance: string;
 };
 

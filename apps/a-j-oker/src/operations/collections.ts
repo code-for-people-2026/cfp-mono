@@ -1,5 +1,5 @@
 import { APIError, type CollectionConfig, type Field, type TextField, type NumberField } from "payload";
-import { canAudit, canReview, internal, isAdministrator } from "./policy";
+import { canAudit, canReadSafetyCases, internal, isAdministrator } from "./policy";
 import { adminPermissionAudit } from "./audit";
 import { options } from "./admin-presentation";
 import { isDeepStrictEqual } from "node:util";
@@ -14,7 +14,7 @@ function collection(slug: string, label: string, fields: Field[], columns: strin
       description: "通过本资源的操作区受理、复核、处置或追加版本；原始记录只读。", hidden: read === "private",
       components: read === "private" ? undefined : { beforeListTable: ["/src/operations/admin-components#OperationsListTools"] } },
     access: {
-      read: ({ req }) => internal(req) || (read === "private" ? false : read === "admin" ? isAdministrator(req.user) : read === "audit" ? canAudit(req.user) : canReview(req.user)),
+      read: ({ req }) => internal(req) || (read === "private" ? false : read === "admin" ? isAdministrator(req.user) : read === "audit" ? canAudit(req.user) : canReadSafetyCases(req.user, slug)),
       create: ({ req }) => internal(req), update: ({ req }) => internal(req), delete: () => false,
     },
     hooks: {
@@ -63,7 +63,7 @@ export const operationsCollections: CollectionConfig[] = [
     { name: "retentionReviewNeeded", label: "历史留存迁移待复核", type: "checkbox", defaultValue: false, index: true },
     date("retentionPurgedAt", "内容已到期清理"),
     { name: "legalHold", label: "暂缓到期清理", type: "checkbox", defaultValue: false }, text("holdReason", "暂缓清理依据"), date("holdReviewAt", "暂缓复核日期"),
-  ], ["receipt", "status", "severity", "alertStatus", "category", "assignedTo", "acceptBy", "resolveBy", "feedbackBy"]),
+  ], ["receipt", "status", "parentId", "severity", "alertStatus", "category", "assignedTo", "acceptBy", "resolveBy", "feedbackBy"]),
   collection("safety-alert-state", "通知服务状态", [
     { ...text("key", "渠道", true), unique: true }, text("fingerprint", "配置指纹"), text("testId", "测试编号"),
     date("testedAt", "平台接受测试时间"), date("verifiedAt", "负责人确认收件时间"), date("heartbeatAt", "任务心跳"),
@@ -95,6 +95,6 @@ export const operationsCollections: CollectionConfig[] = [
   ], ["id", "itemId", "state", "judgment", "createdAt"], "admin"),
 ];
 export const adminRoleField: Field = { name: "role", label: "运营权限", type: "select", required: true, defaultValue: "reviewer", options: [
-  { label: "系统管理员", value: "administrator" }, { label: "审核运营员", value: "reviewer" }, { label: "审计员", value: "auditor" },
+  { label: "系统管理员", value: "administrator" }, { label: "审核运营员", value: "reviewer" }, { label: "独立申诉复核员", value: "appeal_reviewer" }, { label: "审计员", value: "auditor" },
 ] };
 export const adminAuditHook = adminPermissionAudit;

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { BeforeListTableServerProps, UIFieldServerProps } from "payload";
-import { activeRule, canAudit, canReview, isAdministrator } from "./policy";
+import { activeRule, canAudit, canReview, isAdministrator, isAppealReviewer } from "./policy";
 import { imageReviewConfigured } from "./image-review";
 import { OperationsService } from "./service";
 import { feishuAlertStatus } from "./alerts";
@@ -45,8 +45,8 @@ export async function OperationsDocumentActions({ collectionSlug: slug, data, id
   const admin = payload.config.routes.admin;
   if (slug === "safety-cases" && canReview(user)) {
     // Pass metadata only. Evidence is fetched explicitly, with a reason and an audit.
-    const row = { id: Number(id), revision: data.revision, status: data.status, assignedTo: data.assignedTo, source: data.source, stage: data.stage, category: data.category, turnId: data.turnId, mediaId: data.mediaId, legalHold: data.legalHold, retentionReviewNeeded: data.retentionReviewNeeded, retentionPurgedAt: data.retentionPurgedAt, retainUntil: data.retainUntil, holdReviewAt: data.holdReviewAt };
-    return <CaseActions row={row} administrator={isAdministrator(user)} userId={user.id} admin={admin} />;
+    const row = { id: Number(id), revision: data.revision, status: data.status, parentId: data.parentId, assignedTo: data.assignedTo, lastReviewer: data.lastReviewer, source: data.source, stage: data.stage, category: data.category, turnId: data.turnId, mediaId: data.mediaId, legalHold: data.legalHold, retentionReviewNeeded: data.retentionReviewNeeded, retentionPurgedAt: data.retentionPurgedAt, retainUntil: data.retainUntil, holdReviewAt: data.holdReviewAt };
+    return <CaseActions row={row} administrator={isAdministrator(user)} appealReviewer={isAppealReviewer(user)} userId={user.id} admin={admin} />;
   }
   if (!isAdministrator(user)) return null;
   if (slug === "safety-rules") {

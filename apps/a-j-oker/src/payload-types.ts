@@ -708,7 +708,7 @@ export interface PlatformModelQuota {
  */
 export interface Admin {
   id: number;
-  role: 'administrator' | 'reviewer' | 'auditor';
+  role: 'administrator' | 'reviewer' | 'appeal_reviewer' | 'auditor';
   updatedAt: string;
   createdAt: string;
   email: string;
