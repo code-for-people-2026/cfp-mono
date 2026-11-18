@@ -45,7 +45,8 @@ await import("./load-local-env");
 if (!process.env.DEEPSEEK_API_KEY) throw new Error("DeepSeek configuration missing; no live evaluation performed");
 // Wan may throttle eight concurrent submissions; keep image batches and mixed
 // retries at two workers while preserving the real application behavior.
-const concurrency = mode === "--full-bank" ? (items.some(item => item.modality === "image") ? 2 : 8) : filingRetest && items.some(item => item.modality === "image") ? 2 : 1;
+const hasImageItems = items.some(item => item.modality === "image");
+const concurrency = mode === "--full-bank" ? (hasImageItems ? 2 : 8) : filingRetest ? (hasImageItems ? 2 : 4) : 1;
 if (imageEnv) {
   const config = parseEnv(await readFile(imageEnv, "utf8"));
   for (const key of ["DASHSCOPE_API_KEY", "HELLO_IMAGE_WORKSPACE_ID", "HELLO_GREEN_ACCESS_KEY_ID", "HELLO_GREEN_ACCESS_KEY_SECRET"]) {
