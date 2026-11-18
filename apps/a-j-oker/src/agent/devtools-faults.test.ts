@@ -32,11 +32,11 @@ async function controlFile(modes: Record<string, boolean>) {
 
 describe("A2A local fault fixture", () => {
   it("requires the exact synthetic owner and private local file", async () => {
-    const file = await controlFile({ failFirstSendBeforeExecution: true });
+    const file = await controlFile({ failFirstExpertExecution: true });
     await expect(loadA2AFaultPolicy({
       owner: AJ_A2A_FAULT_OWNER,
       env: { [AJ_A2A_FAULT_CONTROL_ENV]: file },
-    })).resolves.toMatchObject({ enabled: true, failFirstSendBeforeExecution: true });
+    })).resolves.toMatchObject({ enabled: true, failFirstExpertExecution: true });
 
     await expect(loadA2AFaultPolicy({
       owner: "real-user",
@@ -58,6 +58,8 @@ describe("A2A local fault fixture", () => {
       failFirstSendBeforeExecution: false,
       failFirstModelAttempt: false,
       loseFirstResponseAfterCommit: false,
+      failFirstExpertExecution: false,
+      exhaustExpertExecutionRetries: false,
     });
     await expect(loadA2AFaultPolicy({
       owner: AJ_A2A_FAULT_OWNER,
@@ -78,6 +80,21 @@ describe("A2A local fault fixture", () => {
       owner: AJ_A2A_FAULT_OWNER,
       env: { [AJ_A2A_FAULT_CONTROL_ENV]: file, HELLO_DEPLOYED: "true" },
     })).resolves.toEqual(DISABLED_A2A_FAULTS);
+  });
+
+  it("supports deterministic first-failure and bounded execution exhaustion", async () => {
+    const file = await controlFile({
+      failFirstExpertExecution: true,
+      exhaustExpertExecutionRetries: true,
+    });
+    await expect(loadA2AFaultPolicy({
+      owner: AJ_A2A_FAULT_OWNER,
+      env: { [AJ_A2A_FAULT_CONTROL_ENV]: file },
+    })).resolves.toMatchObject({
+      enabled: true,
+      failFirstExpertExecution: true,
+      exhaustExpertExecutionRetries: true,
+    });
   });
 
   it("rejects public control files rather than partially enabling", async () => {

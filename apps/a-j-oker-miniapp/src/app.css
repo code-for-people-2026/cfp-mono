@@ -295,6 +295,13 @@ input {
   color: #637568;
   border-radius: 8px;
 }
+.message-retry-action {
+  width: auto;
+  min-width: 104px;
+  padding-right: 12px;
+  padding-left: 12px;
+  white-space: nowrap;
+}
 .message-action .chat-icon {
   width: 17px;
   height: 17px;
@@ -437,6 +444,15 @@ input {
 .failed-bubble {
   color: #9d7650;
 }
+.handoff-failure-notice {
+  margin: 8px 16px 2px 52px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f3f0e9;
+  color: #665f52;
+  font-size: 12px;
+  line-height: 1.5;
+}
 .loading-note {
   display: block;
   font-size: 12px;
@@ -459,6 +475,9 @@ input {
   z-index: 10;
   flex-shrink: 0;
   background: #f6f8f7;
+}
+.chat-dock.is-keyboard-overlay .composer-area {
+  padding-bottom: 7px;
 }
 .chat-icon { display: block; width: 25px; height: 25px; pointer-events: none; }
 .h5-shell .taro-textarea { resize: none; }

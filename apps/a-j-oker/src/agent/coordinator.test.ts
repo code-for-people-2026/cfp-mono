@@ -689,6 +689,67 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
     expect(deliverExpert).toHaveBeenCalledOnce();
   });
 
+  it("专家执行故障耗尽后持久结构化不可用状态且不交付专家方案", async () => {
+    const events: string[] = [];
+    const recorded: unknown[] = [];
+    const deliverExpert = vi.fn(async () => undefined);
+    const team = createPsychologyTeam({
+      model: new WorkflowModel(() => [call("submit_psychology_plan", {
+        ...plan,
+        reply: { ...reply, approach: "cbt" },
+        lifecycle: "continue",
+        usedSourceIds: [],
+      })]),
+      configuration: {
+        coordinator: DEFAULT_AGENT_CONFIGS[0].prompt,
+        revision: "fault-fixture",
+        specialists: [{
+          approach: "cbt",
+          label: "认知行为",
+          prompt: DEFAULT_AGENT_CONFIGS.find(item => item.key === "cbt")!.prompt,
+          revision: "fault-fixture",
+        }],
+      },
+      sessionService: new InMemorySessionService(),
+      userId: "owner",
+      turnSessionId: "fault-turn",
+      consultationExecutionId: "fault-execution",
+      inputParts: input,
+      signal: new AbortController().signal,
+      a2a: createInProcessPsychologyA2AFactory({
+        principal: { owner: "owner", tenant: AJ_A2A_TENANT },
+        taskStore: new CoordinatorTestTaskStore(),
+        requestLedger: new CoordinatorTestLedger(),
+      }),
+      deliverExpert,
+      recordSpecialist: async state => recorded.push(structuredClone(state)),
+      localFaults: {
+        exhaustExpertExecutionRetries: true,
+        onEvent: event => events.push(`${event.category}:${event.attempt}`),
+      },
+    });
+
+    await expect(team.consultDirect("cbt", { request: "继续当前任务", urgency: "routine" }))
+      .resolves.toMatchObject({ status: "unavailable" });
+    expect(events).toEqual([
+      "expert_execution_fault:1",
+      "expert_execution_fault:2",
+      "expert_execution_fault:3",
+    ]);
+    expect(deliverExpert).not.toHaveBeenCalled();
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]).toMatchObject({
+      status: "unavailable",
+      handoff: {
+        status: "failed",
+        attempts: 3,
+        finalDisposition: "retry_exhausted",
+      },
+    });
+    const serialized = JSON.stringify((recorded[0] as { handoff?: unknown }).handoff);
+    expect(serialized).not.toContain("prompt");
+  });
+
   it("直接专家 reply 中的两件作品先被现有 schema 拒绝，修正后仍只保存一件", async () => {
     let attempts = 0;
     const first = {
@@ -807,7 +868,7 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
       const session = await f.sessionService.getSession({
         appName: "hello_agent",
         userId: "owner",
-        sessionId: `11:${approach}`,
+        sessionId: `11:${approach}:attempt-1`,
       });
       expect(
         session?.events.some((event) => event.author === `${approach}_agent`),
@@ -941,8 +1002,9 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
     expect(instruction).toContain("在聊天消息内直接选择并继续");
     expect(instruction).toContain("不得追加第二件作品");
     expect(instruction).toContain("专家工具返回 expertUnavailable");
-    expect(instruction).toContain("向用户明确说明与该专家的本轮交接未完成");
-    expect(instruction).toContain("由阿 J 继续回应，之后可以再试");
+    expect(instruction).toContain("直接保存阿 J 自己的支持性回应");
+    expect(instruction).toContain("结构化交接状态由宿主呈现");
+    expect(instruction).not.toContain("向用户明确说明与该专家的本轮交接未完成");
   });
 
   it("专家失败回到主 Agent 并收到明确不可用结果，不泄漏原始错误", async () => {
@@ -951,16 +1013,13 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
     });
     await f.run();
     const returned = JSON.stringify(f.model.requests.at(-1)?.contents);
-    expect(returned).toContain("与认知行为专家的本轮交接未完成");
     expect(returned).toContain("expertUnavailable");
-    expect(returned).toContain("未生成或交付方案");
     expect(returned).not.toContain("private-provider-secret");
     expect(f.save).toHaveBeenCalledTimes(1);
     const savedReply = f.save.mock.calls[0]?.[0] as typeof reply & {
       aJoker: string;
     };
-    expect(savedReply.aJoker.startsWith("与认知行为专家的本轮交接未完成，由阿 J 继续回应，之后可以再试。")).toBe(true);
-    expect(savedReply.aJoker).toContain(reply.aJoker);
+    expect(savedReply.aJoker).toBe(reply.aJoker);
     expect(savedReply.aJoker).not.toContain("private-provider-secret");
     expect(f.save.mock.calls[0]?.[1]).toBeUndefined();
   });
@@ -984,7 +1043,7 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
       ],
     );
     await f.run();
-    expect(JSON.stringify(f.model.requests.at(-1)?.contents)).toContain("本轮交接未完成");
+    expect(JSON.stringify(f.model.requests.at(-1)?.contents)).toContain("expertUnavailable");
     expect(f.save).toHaveBeenCalledExactlyOnceWith({
       ...reply,
       approach: "supportive",

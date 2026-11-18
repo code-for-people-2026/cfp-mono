@@ -190,6 +190,30 @@ ${imagePromptConstraints()}`;
   const executionId = request.executionId || String(request.turnId);
   const a2aStorage = createPayloadA2AStorage(request.repo, AJ_A2A_TENANT);
   const { taskStore, requestLedger, recoverTask } = a2aStorage;
+  const executionDiagnostics = (event: {
+    category: string;
+    diagnostic: {
+      executionId: string;
+      taskId: string;
+      expertId: string;
+      attempt: number;
+      phase: string;
+      errorKind: string;
+      errorName: string;
+      status?: number;
+      code?: string;
+      cause: string;
+      disposition: string;
+    };
+  }) => {
+    console.info("aj expert-execution-diagnostic", JSON.stringify({
+      category: event.category,
+      ...event.diagnostic,
+    }));
+  };
+  const recordSpecialist = async (specialist: SpecialistState) => {
+    await request.repo.update("a-j-oker", request.turnId, { specialist });
+  };
   let transportAttempts = 0;
   const transportIntercept = faultPolicy.enabled
     && (faultPolicy.failFirstSendBeforeExecution || faultPolicy.loseFirstResponseAfterCommit)
@@ -220,6 +244,7 @@ ${imagePromptConstraints()}`;
     requestLedger,
     recoverTask,
     transportIntercept,
+    executionDiagnostics,
     expertTelemetry: faultPolicy.enabled
       ? event => logFault(event.category, event.attempt)
       : undefined,
@@ -261,15 +286,18 @@ ${imagePromptConstraints()}`;
       onStage: request.onStage,
       responseGuidance,
       a2a: a2aFactory,
+      recordSpecialist,
       localFaults: faultPolicy.enabled
         ? {
           rejectFirstTwoExpertSubmissions: faultPolicy.rejectFirstTwoExpertSubmissions,
+          failFirstExpertExecution: faultPolicy.failFirstExpertExecution,
+          exhaustExpertExecutionRetries: faultPolicy.exhaustExpertExecutionRetries,
           onEvent: event => logFault(event.category, event.attempt),
         }
         : undefined,
       checkDelivery: value => constrainedFormDeliveryError(request, value)
         || restCardDeliveryError(imageAdmitted, value, generatedMediaId, imageDecision.refused),
-      deliverExpert: async ({ plan }) => request.save(plan.reply!, {
+      deliverExpert: async ({ plan, handoff }) => request.save(plan.reply!, {
         ...active,
         ...(active.subtitle || !current.subtitle ? {} : { subtitle: current.subtitle }),
         status: plan.lifecycle === "complete" ? "completed" : "active",
@@ -279,6 +307,7 @@ ${imagePromptConstraints()}`;
             : [],
         ),
         currentTask: `${active.currentTask.split("\n最新进展：")[0]}\n最新进展：${plan.summary}`.slice(0, 1200),
+        handoff,
       }),
     });
     try {
@@ -326,9 +355,12 @@ ${imagePromptConstraints()}`;
     },
     responseGuidance,
     a2a: a2aFactory,
+    recordSpecialist,
     localFaults: faultPolicy.enabled
       ? {
         rejectFirstTwoExpertSubmissions: faultPolicy.rejectFirstTwoExpertSubmissions,
+        failFirstExpertExecution: faultPolicy.failFirstExpertExecution,
+        exhaustExpertExecutionRetries: faultPolicy.exhaustExpertExecutionRetries,
         onEvent: event => logFault(event.category, event.attempt),
       }
       : undefined,

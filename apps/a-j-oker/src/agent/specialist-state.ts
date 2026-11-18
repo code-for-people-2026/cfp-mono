@@ -1,5 +1,8 @@
 import { presentationAvatarSchema } from "@cfp/base-chat-protocol";
-import { approachSchema } from "@cfp/a-j-oker-contracts";
+import {
+  approachSchema,
+  expertHandoffStateSchema,
+} from "@cfp/a-j-oker-contracts";
 import { z } from "zod";
 
 const sourceSchema = z.object({
@@ -38,12 +41,19 @@ export const specialistStateSchema = z.object({
   prompt: z.string().min(1).max(20000),
   allowedComponents: z.array(z.enum(["form", "card", "table", "code", "page", "image"])).max(6),
   preferredComponents: z.array(z.enum(["form", "card", "table", "code", "page", "image"])).max(6),
+  handoff: expertHandoffStateSchema.optional(),
 }).strict();
 
 export type SpecialistState = z.output<typeof specialistStateSchema>;
 
 export function publicSpecialistState(value: unknown) {
-  const { prompt: _prompt, currentTask: _task, allowedComponents: _allowed, preferredComponents: _preferred, ...publicValue } = specialistStateSchema.parse(value);
+  const {
+    prompt: _prompt,
+    currentTask: _task,
+    allowedComponents: _allowed,
+    preferredComponents: _preferred,
+    ...publicValue
+  } = specialistStateSchema.parse(value);
   return {
     ...publicValue,
     // Replay compatibility: pre-avatar snapshots keep their factual turn data,

@@ -59,8 +59,17 @@ describe("durable specialist state", () => {
   });
 
   it("drops malformed private specialist snapshots at the public boundary", () => {
-    const projected = publicAJokerState({ id: 1, specialist: { prompt: "secret", currentTask: "secret task" } });
+    const projected = publicAJokerState({
+      id: 1,
+      owner: "private-owner",
+      requestKey: "private-request-key",
+      fingerprint: "private-fingerprint",
+      specialist: { prompt: "secret", currentTask: "secret task" },
+    });
     expect(projected).not.toHaveProperty("specialist");
+    expect(projected).not.toHaveProperty("owner");
+    expect(projected).not.toHaveProperty("requestKey");
+    expect(projected).not.toHaveProperty("fingerprint");
     expect(JSON.stringify(projected)).not.toContain("secret");
   });
 });

@@ -16,6 +16,8 @@ const platform = vi.hoisted(() => ({
   nextTick: vi.fn((fn: () => void) => fn()),
   onAppHide: vi.fn(),
   offAppHide: vi.fn(),
+  onAppShow: vi.fn(),
+  offAppShow: vi.fn(),
   onKeyboardHeightChange: vi.fn(),
   offKeyboardHeightChange: vi.fn(),
   authorize: vi.fn(),
@@ -161,6 +163,211 @@ async function mount(keyboard = true) {
         .props.onClick(),
     );
 }
+
+it("失败回合的重试由服务端恢复原输入，双击不重复且不改当前草稿", async () => {
+  const failed: Turn = {
+    id: 9,
+    input: {
+      text: "填写「今天的感受」\n心情：0",
+      mediaIds: [7],
+      formResponse: {
+        turnId: 3,
+        artifactId: "reflection",
+        values: { mood: 0, note: "原样保留" },
+      },
+    },
+    status: "failed",
+    mode: "platform",
+    error: "这一次没有完成",
+    createdAt: "2026-11-19T00:00:00.000Z",
+  };
+  history = [failed];
+  const originalRequest = platform.request.getMockImplementation()!;
+  let retries = 0;
+  platform.request.mockImplementation(async (options: { url: string; data?: unknown }) => {
+    if (options.url.endsWith("/turn-retry")) {
+      retries++;
+      expect(options.data).toEqual({ turnId: 9, mode: "platform" });
+      const completed = {
+        ...failed,
+        id: 10,
+        status: "completed" as const,
+        aJoker: "已恢复",
+        association: "保留真实的回应依据",
+        retryOfTurnId: 9,
+      };
+      history = [failed, completed];
+      return { statusCode: 200, data: completed };
+    }
+    return originalRequest(options);
+  });
+  await mount();
+  const textarea = renderer!.root.findByType("textarea");
+  act(() => textarea.props.onInput({ detail: { value: "还没发送的草稿" } }));
+  const retry = renderer!.root.findAllByType("button")
+    .find((button) => button.props.children === "重试这一轮")!;
+  expect(retry.props.className).toContain("message-retry-action");
+  await act(async () => {
+    const first = retry.props.onClick();
+    retry.props.onClick();
+    await first;
+  });
+  expect(retries).toBe(1);
+  expect(renderer!.root.findByType("textarea").props.value).toBe("还没发送的草稿");
+  expect(text()).not.toContain("重试这一轮");
+  expect(text().match(/填写「今天的感受」/g)).toHaveLength(1);
+  expect(text()).not.toContain("这一次没有完成");
+  expect(text()).toContain("已恢复");
+});
+
+it("重试再次失败后只保留最新可操作按钮，刷新后仍可继续重试", async () => {
+  const original: Turn = {
+    id: 9,
+    input: { text: "原问题", mediaIds: [] },
+    status: "failed",
+    mode: "platform",
+    error: "第一次失败",
+    createdAt: "2026-11-19T00:00:00.000Z",
+  };
+  history = [original];
+  const originalRequest = platform.request.getMockImplementation()!;
+  const retriedIds: number[] = [];
+  platform.request.mockImplementation(async (options: { url: string; data?: { turnId?: number } }) => {
+    if (options.url.endsWith("/turn-retry")) {
+      const turnId = options.data?.turnId;
+      expect(turnId).toBeTypeOf("number");
+      if (turnId === undefined) throw new Error("missing retry turn id");
+      retriedIds.push(turnId);
+      const next: Turn = turnId === 9
+        ? {
+            ...original,
+            id: 10,
+            retryOfTurnId: 9,
+            error: "第二次失败",
+          }
+        : {
+            ...original,
+            id: 11,
+            retryOfTurnId: 10,
+            status: "completed",
+            error: null,
+            aJoker: "终于完成",
+            association: "真实回应依据",
+          };
+      history = [...history, next];
+      return { statusCode: 200, data: next };
+    }
+    return originalRequest(options);
+  });
+  await mount();
+
+  await act(async () => {
+    await renderer!.root.findAllByType("button")
+      .find((button) => button.props.children === "重试这一轮")!
+      .props.onClick();
+  });
+  const actionable = renderer!.root.findAllByType("button")
+    .filter((button) => button.props.children === "重试这一轮");
+  expect(actionable).toHaveLength(1);
+  await act(async () => { await actionable[0].props.onClick(); });
+
+  expect(retriedIds).toEqual([9, 10]);
+  expect(text()).toContain("终于完成");
+  expect(text().match(/原问题/g)).toHaveLength(1);
+  expect(text()).not.toContain("第一次失败");
+  expect(text()).not.toContain("第二次失败");
+  expect(renderer!.root.findAllByType("button")
+    .filter((button) => button.props.children === "重试这一轮"))
+    .toHaveLength(0);
+});
+
+it("刷新恢复重试链时只显示最新结果，并保留非祖先的表单来源", async () => {
+  const { artifacts } =
+    await import("../../../packages/base-chat-protocol/test/fixtures");
+  const source: Turn = {
+    ...initial,
+    id: 104,
+    input: { text: "请填写来源表单", mediaIds: [] },
+    artifacts: artifacts.filter((item) => item.kind === "form"),
+  };
+  const failedAnswer: Turn = {
+    ...initial,
+    id: 105,
+    input: {
+      text: "提交练习表单",
+      mediaIds: [],
+      formResponse: {
+        turnId: 104,
+        artifactId: "thought_record",
+        values: { situation: "仍需保留的答案" },
+      },
+    },
+    status: "failed",
+    aJoker: undefined,
+    error: "表单回答失败",
+  };
+  const retriedAnswer: Turn = {
+    ...failedAnswer,
+    id: 106,
+    retryOfTurnId: 105,
+    status: "completed",
+    error: null,
+    aJoker: "表单回答已完成",
+  };
+  const fallback: Turn = {
+    ...initial,
+    id: 108,
+    input: { text: "请专家帮我梳理", mediaIds: [] },
+    aJoker: "旧的阿 J 兜底回复",
+    specialist: {
+      taskId: "task-108",
+      expertId: "cbt",
+      name: "心理专家",
+      method: "认知行为练习",
+      configurationRevision: "test",
+      theme: "sage",
+      layout: "reflection",
+      status: "unavailable",
+      handoff: {
+        schemaVersion: 1,
+        status: "failed",
+        attempts: 3,
+        finalDisposition: "retry_exhausted",
+        diagnostics: [],
+      },
+      sources: [],
+    },
+  };
+  const successfulRetry: Turn = {
+    ...fallback,
+    id: 109,
+    retryOfTurnId: 108,
+    aJoker: "最新专家回复",
+    specialist: {
+      ...fallback.specialist!,
+      status: "completed",
+      handoff: {
+        schemaVersion: 1,
+        status: "completed",
+        attempts: 1,
+        finalDisposition: "completed",
+        diagnostics: [],
+      },
+    },
+  };
+  history = [source, failedAnswer, retriedAnswer, fallback, successfulRetry];
+
+  await mount();
+
+  expect(text()).toContain("请填写来源表单");
+  expect(text()).toContain("仍需保留的答案");
+  expect(text()).toContain("表单回答已完成");
+  expect(text()).not.toContain("表单回答失败");
+  expect(text().match(/请专家帮我梳理/g)).toHaveLength(1);
+  expect(text()).toContain("最新专家回复");
+  expect(text()).not.toContain("旧的阿 J 兜底回复");
+  expect(renderer!.root.findAllByProps({ className: "turn" })).toHaveLength(3);
+});
 const text = () => JSON.stringify(renderer?.toJSON());
 
 it.each(["missing-sensitive", "updated-policy"])("图片授权不足时带上传原因进入设置：%s", async (reason) => {

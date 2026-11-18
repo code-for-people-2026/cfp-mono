@@ -8,6 +8,7 @@ import {
   historySchema,
   handoffPreambleSchema,
   memoryStatusSchema,
+  expertExecutionDiagnosticSchema,
 } from "./index";
 
 const turn = {
@@ -54,6 +55,45 @@ describe("跨端协议", () => {
     expect(handoffPreambleSchema.safeParse("过".repeat(321)).success).toBe(
       false,
     );
+  });
+  it("公开安全的结构化专家交接状态，但不接受自由文本诊断", () => {
+    const diagnostic = {
+      executionId: "turn-1",
+      taskId: "task-1",
+      expertId: "cbt",
+      attempt: 1,
+      phase: "execution",
+      errorKind: "provider_http",
+      errorName: "DeepSeekError",
+      status: 503,
+      cause: "http_status",
+      disposition: "retry_scheduled",
+    };
+    expect(turnResultSchema.parse({
+      ...turn,
+      specialist: {
+        taskId: "task-1",
+        expertId: "cbt",
+        name: "认知行为",
+        method: "认知行为",
+        configurationRevision: "r1",
+        theme: "sage",
+        layout: "reflection",
+        status: "unavailable",
+        handoff: {
+          schemaVersion: 1,
+          status: "failed",
+          attempts: 1,
+          finalDisposition: "retry_exhausted",
+          diagnostics: [diagnostic],
+        },
+        sources: [],
+      },
+    }).specialist?.handoff?.diagnostics).toEqual([diagnostic]);
+    expect(expertExecutionDiagnosticSchema.safeParse({
+      ...diagnostic,
+      cause: "raw provider body and prompt",
+    }).success).toBe(false);
   });
   it("外部 Agent 不能走平台生成请求", () => {
     expect(() =>

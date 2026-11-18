@@ -5,7 +5,7 @@ import type { AgeStatus } from "@cfp/a-j-oker-contracts";
 import { installAiCopyLabels } from "../../chat/ai-copy";
 import { consentCurrent, type PrivacyStatus } from "../../chat/privacy";
 import { openPrivacy, openHelp, privacyChangedEvent, type PrivacyChange } from "../../chat/settings-navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Button as TaroButton,
   type ButtonProps,
@@ -100,6 +100,15 @@ const suggestions = [
   "最近有些累，想慢一点",
 ];
 
+export function visibleRetryLineage(rows: Turn[]) {
+  const superseded = new Set(
+    rows.flatMap((row) =>
+      row.retryOfTurnId === undefined ? [] : [row.retryOfTurnId],
+    ),
+  );
+  return rows.filter((row) => !superseded.has(row.id));
+}
+
 export default function Chat() {
   const [visible, setVisible] = useState(true);
   const pageHidden = useRef(false);
@@ -124,6 +133,16 @@ export default function Chat() {
   const [images, setImages] = useState<Record<number, string | null>>({});
   const [text, setText] = useState("");
   const [inputMode, setInputMode] = useState<"voice" | "keyboard">("voice");
+  const [composerKeyboardActive, setComposerKeyboardActive] = useState(false);
+  const [composerKeyboardHeight, setComposerKeyboardHeight] = useState(0);
+  const [composerFloating, setComposerFloating] = useState(false);
+  const handleComposerKeyboardFocus = useCallback((
+    focused: boolean,
+    event: { height: number },
+  ) => {
+    setComposerKeyboardActive(focused);
+    setComposerKeyboardHeight(event.height);
+  }, []);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const mode = useChatMode();
   const settingsNavigation = useRef(false);
@@ -771,6 +790,7 @@ export default function Chat() {
     formSubmissionStates(history);
   const activeSpecialist = activeSpecialistTurn(history);
   const interimPreamble = interimHandoffPreamble(history, progress);
+  const visibleHistory = visibleRetryLineage(history);
   const returnToAj = async (taskId: string) => {
     try {
       await send({
@@ -816,6 +836,55 @@ export default function Chat() {
       if (pageAlive.current && version === scopeVersion.current) {
         setProgress(undefined);
         setBusy(false);
+      }
+    }
+  }
+  async function retryFailedTurn(row: Turn) {
+    const exhaustedHandoff = row.status === "completed" &&
+      row.specialist?.handoff?.status === "failed";
+    if (
+      disabled ||
+      historyFailed ||
+      sendLock.current ||
+      (row.status !== "failed" && !exhaustedHandoff) ||
+      row.mode !== "platform" ||
+      row.input.action ||
+      (exhaustedHandoff && !!row.input.formResponse) ||
+      activeSession.current !== sessionId
+    ) return;
+    const version = scopeVersion.current;
+    const scope = sessionId;
+    if (!scope) return;
+    sendLock.current = true;
+    setBusy(true);
+    setError("");
+    setLoadingRun((current) => current + 1);
+    try {
+      const result = await api.retryTurn(row.id);
+      if (
+        !pageAlive.current ||
+        version !== scopeVersion.current ||
+        activeSession.current !== scope
+      ) return;
+      setHistory((current) => [
+        ...current.filter((item) => item.id !== result.id),
+        result,
+      ]);
+      await readHistory(scope);
+      await refreshSessions(version);
+    } catch (value) {
+      if (
+        pageAlive.current &&
+        version === scopeVersion.current &&
+        activeSession.current === scope
+      ) {
+        problem(value);
+        await readHistory(scope).catch(recoveryFailed);
+      }
+    } finally {
+      if (pageAlive.current && version === scopeVersion.current) {
+        setBusy(false);
+        sendLock.current = false;
       }
     }
   }
@@ -928,7 +997,7 @@ export default function Chat() {
                 阿 J 先生正在翻看我们聊过的日常…
               </Text>
             )}
-            {history.map((row, rowIndex) => (
+            {visibleHistory.map((row) => (
               <View className="turn" key={row.id}>
                 {!isFormOnlyInput(row.input) && (
                   <View className="message user-message">
@@ -977,6 +1046,13 @@ export default function Chat() {
                     </View>
                   </View>
                 )}
+                {row.specialist?.handoff?.status === "failed" && (
+                  <View className="handoff-failure-notice" role="status">
+                    <Text>{row.status === "completed"
+                      ? `与${row.specialist.name}的本轮交接未完成，这条回复由阿 J 继续回应。`
+                      : `与${row.specialist.name}的本轮交接未完成，本轮没有生成回复。`}</Text>
+                  </View>
+                )}
                 <View className="message assistant-message">
                   <View className="message-main">
                     <View
@@ -994,13 +1070,13 @@ export default function Chat() {
                               : undefined;
                         const turnContent = (
                           <>
-                            <MessageText aiGenerated={row.status === "completed"} external={row.mode === "external"}>
+                            {!(row.status === "failed" && row.specialist?.handoff?.status === "failed") && <MessageText aiGenerated={row.status === "completed"} external={row.mode === "external"}>
                               {row.status === "completed"
                                 ? row.aJoker
                                 : row.status === "failed"
                                   ? row.error || "这一次没有完成，请查看下方提示。"
                                   : "这一轮尚未完成，请先确认上次发送；若长时间未完成，请联系开发者。"}
-                            </MessageText>
+                            </MessageText>}
                             {row.status === "completed" && (
                               <Artifacts
                                 external={row.mode === "external"}
@@ -1037,7 +1113,7 @@ export default function Chat() {
                             : turnContent;
                         }
                         const firstHandoff = !history
-                          .slice(0, rowIndex)
+                          .slice(0, history.findIndex((item) => item.id === row.id))
                           .some((previous) => specialistPresentationForTurn(previous)?.id === origin.id);
                         return (
                           <>
@@ -1072,6 +1148,21 @@ export default function Chat() {
                     </View>
                     <View className="message-footer">
                       <View className="message-actions">
+                        {(row.status === "failed" ||
+                          (row.status === "completed" && row.specialist?.handoff?.status === "failed" && !row.input.formResponse)) &&
+                          row.mode === "platform" &&
+                          !row.input.action &&
+                          !history.some((candidate) =>
+                            candidate.retryOfTurnId === row.id
+                          ) && (
+                            <Button
+                              className="control message-action message-retry-action"
+                              disabled={disabled || historyFailed}
+                              onClick={() => void retryFailedTurn(row)}
+                            >
+                              重试这一轮
+                            </Button>
+                          )}
                         {row.imageGeneration?.canResume && <Button className="control message-action" disabled={disabled} onClick={() => void resumeImage(row)}>继续取图</Button>}
                         {row.status === "completed" && row.aJoker && (
                           <CopyMessage
@@ -1150,7 +1241,11 @@ export default function Chat() {
             <View id="chat-end" className="chat-end" />
           </View>
         </View>
-        <ChatDock>
+        <ChatDock
+          active={inputMode === "keyboard" && composerKeyboardActive}
+          keyboardHeight={composerKeyboardHeight}
+          onOverlayChange={setComposerFloating}
+        >
           {error && (
             <View className="error-banner">
               <Text>
@@ -1197,6 +1292,8 @@ export default function Chat() {
                 text={text}
                 attachments={attachments}
                 disabled={disabled || historyFailed || navigationOpen}
+                inputFixed={composerFloating}
+                onKeyboardFocusChange={handleComposerKeyboardFocus}
                 voiceDisabled={
                   disabled ||
                   !consentCurrent(privacy) ||

@@ -3,7 +3,7 @@ import { publicSpecialistState, specialistStateSchema } from "../agent/specialis
 
 // One boundary projection for every public transport. Persisted specialist
 // snapshots intentionally remain private and richer than this result.
-type PublicAJokerRow<T> = Omit<T, "imageGeneration" | "specialist"> & {
+type PublicAJokerRow<T> = Omit<T, "imageGeneration" | "specialist" | "owner" | "requestKey" | "fingerprint"> & {
   imageGeneration?: { status: "submitting" | "pending" | "stored" | "failed" | "blocked"; canResume: boolean };
   specialist?: ReturnType<typeof publicSpecialistState>;
 };
@@ -14,15 +14,25 @@ export function publicAJokerState<
   const projected = publicImageState(row) as Omit<T, "imageGeneration"> & {
     imageGeneration?: PublicAJokerRow<T>["imageGeneration"];
   };
-  if (projected.visibility === "quarantined") {
-    const { handoffPreamble: _withheld, ...safe } = projected;
+  const {
+    owner: _owner,
+    requestKey: _requestKey,
+    fingerprint: _fingerprint,
+    ...withoutInternals
+  } = projected as typeof projected & {
+    owner?: unknown;
+    requestKey?: unknown;
+    fingerprint?: unknown;
+  };
+  if (withoutInternals.visibility === "quarantined") {
+    const { handoffPreamble: _withheld, ...safe } = withoutInternals;
     return safe as PublicAJokerRow<T>;
   }
-  if (!projected.specialist) return projected as PublicAJokerRow<T>;
-  const parsed = specialistStateSchema.safeParse(projected.specialist);
+  if (!withoutInternals.specialist) return withoutInternals as PublicAJokerRow<T>;
+  const parsed = specialistStateSchema.safeParse(withoutInternals.specialist);
   if (!parsed.success) {
-    const { specialist: _malformed, ...safe } = projected;
+    const { specialist: _malformed, ...safe } = withoutInternals;
     return safe as PublicAJokerRow<T>;
   }
-  return { ...projected, specialist: publicSpecialistState(parsed.data) } as PublicAJokerRow<T>;
+  return { ...withoutInternals, specialist: publicSpecialistState(parsed.data) } as PublicAJokerRow<T>;
 }

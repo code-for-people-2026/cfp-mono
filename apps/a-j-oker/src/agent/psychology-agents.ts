@@ -14,9 +14,13 @@ import {
 import { FunctionCallingConfigMode, Type, type Part } from "@google/genai";
 import { AppError, type GenerationProgress, type AJoker } from "../domain/contracts";
 export { SPECIALIST_INSTRUCTIONS } from "./default-prompts";
-import { PSYCHOLOGY_SAFETY, type PsychologyApproach } from "./psychology";
+import { PSYCHOLOGY_APPROACHES, PSYCHOLOGY_SAFETY, type PsychologyApproach } from "./psychology";
 
 import type { AgentConfiguration, SpecialistDefinition } from "./configuration";
+import type {
+  ExpertExecutionDiagnostic,
+  ExpertHandoffState,
+} from "@cfp/a-j-oker-contracts";
 import type { KnowledgeContext } from "./knowledge";
 import { KNOWLEDGE_METHODS, methodQuery } from "./knowledge-query";
 import { SPECIALIST_MAX_CALLS } from "./limits";
@@ -29,6 +33,8 @@ import {
   type PsychologyConsultation,
   type PsychologyPlanSubmission,
 } from "./psychology-plan";
+import { EXPERT_EXECUTION_MAX_ATTEMPTS, ExpertExecutionError } from "./expert-execution";
+import type { SpecialistState } from "./specialist-state";
 
 export const DIRECT_EXPERT_HANDOFF_CONTRACT = `直接交接执行协议（优先级高于上方配置中的旧工作流描述）：
 你已经被协调 Agent 选中并直接接管当前用户回合。不得只向协调 Agent 提供方案，也不得要求协调 Agent 代写、整合或转述。
@@ -72,6 +78,62 @@ class PsychologyAgentTool extends AgentTool {
   }
 }
 
+function specialistSnapshot(input: {
+  spec: SpecialistDefinition;
+  taskId: string;
+  method: string;
+  status: SpecialistState["status"];
+  currentTask: string;
+  handoff?: ExpertHandoffState;
+}): SpecialistState {
+  const { spec } = input;
+  return {
+    taskId: input.taskId,
+    expertId: spec.approach,
+    name: spec.label,
+    method: input.method,
+    configurationRevision: spec.revision,
+    theme: spec.theme ?? "sage",
+    layout: spec.preferredLayout ?? "reflection",
+    ...(spec.subtitle ? { subtitle: spec.subtitle } : {}),
+    ...(spec.avatarReference ? { avatarReference: spec.avatarReference } : {}),
+    status: input.status,
+    sources: [],
+    currentTask: input.currentTask.slice(0, 1200),
+    prompt: spec.prompt,
+    allowedComponents: spec.allowedComponents ?? ["form", "card", "page"],
+    preferredComponents: spec.preferredComponents ?? ["form"],
+    ...(input.handoff ? { handoff: input.handoff } : {}),
+  };
+}
+
+function handoffFromDiagnostics(
+  diagnostics: readonly ExpertExecutionDiagnostic[],
+): ExpertHandoffState {
+  const last = diagnostics.at(-1);
+  return {
+    schemaVersion: 1,
+    status: "failed",
+    attempts: diagnostics.filter((item) => item.phase !== "recovery").length,
+    finalDisposition: last?.disposition === "retry_scheduled"
+      ? "retry_exhausted"
+      : last?.disposition ?? "recovery_unavailable",
+    diagnostics: diagnostics.slice(-3),
+  };
+}
+
+function completedHandoff(
+  diagnostics: readonly ExpertExecutionDiagnostic[],
+): ExpertHandoffState {
+  return {
+    schemaVersion: 1,
+    status: "completed",
+    attempts: Math.max(1, ...diagnostics.map((item) => item.attempt)),
+    finalDisposition: "completed",
+    diagnostics: diagnostics.slice(-3),
+  };
+}
+
 export function createPsychologyTeam(options: {
   model: BaseLlm;
   configuration: AgentConfiguration;
@@ -87,13 +149,17 @@ export function createPsychologyTeam(options: {
   deliverExpert?: (input: {
     plan: PsychologyPlan;
     specialist: SpecialistDefinition;
+    handoff: ExpertHandoffState;
   }) => Promise<unknown>;
   checkDelivery?: (reply: AJoker) => string | undefined;
   responseGuidance?: string;
   localFaults?: {
     rejectFirstTwoExpertSubmissions?: boolean;
+    failFirstExpertExecution?: boolean;
+    exhaustExpertExecutionRetries?: boolean;
     onEvent?: (event: { category: string; attempt: number }) => void;
   };
+  recordSpecialist?: (state: SpecialistState) => Promise<unknown>;
 }) {
   const consultations = new Map<PsychologyApproach, Promise<unknown>>();
   let consultationReservation:
@@ -104,16 +170,13 @@ export function createPsychologyTeam(options: {
   let finished = false;
   let immediateSupport = false;
   let urgentFallback = false;
-  let expertUnavailableNotice: {
-    fact: string;
-    fallback: string;
-  } | undefined;
   const specialists = options.configuration.specialists.map((spec) => {
     const approach = spec.approach;
     let plan: PsychologyPlanSubmission | undefined;
     let knowledgeContext: KnowledgeContext | undefined;
     let executionSignal: AbortSignal | undefined;
     let injectedSubmissionRejections = 0;
+    let injectedExecutionFailures = 0;
     const submit = new SubmitPlanTool({
       name: "submit_psychology_plan",
       description:
@@ -221,18 +284,42 @@ export function createPsychologyTeam(options: {
       },
     });
     const execute = async (
-      consultation: {
-        request: string;
-        urgency: "routine" | "immediate";
-        knowledgeQuery?: string;
-        userFacingIntro?: string;
-      },
+      consultation: PsychologyConsultation,
       signal: AbortSignal,
+      context: {
+        attempt: number;
+        executionId: string;
+        taskId: string;
+      },
     ) => {
+      let sessionAccepted = false;
+      let sessionId = "";
       try {
         plan = undefined;
         knowledgeContext = undefined;
         executionSignal = signal;
+        if (
+          options.localFaults?.failFirstExpertExecution
+          && injectedExecutionFailures < 1
+        ) {
+          injectedExecutionFailures++;
+          options.localFaults.onEvent?.({
+            category: "expert_execution_fault",
+            attempt: context.attempt,
+          });
+          throw new ExpertExecutionError("provider_http", true, 503, undefined, "http_status");
+        }
+        if (
+          options.localFaults?.exhaustExpertExecutionRetries
+          && injectedExecutionFailures < EXPERT_EXECUTION_MAX_ATTEMPTS
+        ) {
+          injectedExecutionFailures++;
+          options.localFaults.onEvent?.({
+            category: "expert_execution_fault",
+            attempt: context.attempt,
+          });
+          throw new ExpertExecutionError("provider_http", true, 503, undefined, "http_status");
+        }
         options.onStage?.({
           stageId: "expert_working",
           stepName: "AI 专家正在接着你刚才的话往下想",
@@ -247,7 +334,7 @@ export function createPsychologyTeam(options: {
         knowledgeContext = spec.knowledge
           ? await spec.knowledge(query!, signal)
           : undefined;
-        const sessionId = `${options.turnSessionId}:${approach}`;
+        sessionId = `${options.turnSessionId}:${approach}:attempt-${context.attempt}`;
         await options.sessionService.createSession({
           appName: "hello_agent",
           userId: options.userId,
@@ -277,7 +364,20 @@ export function createPsychologyTeam(options: {
           abortSignal: signal,
           runConfig: { maxLlmCalls: SPECIALIST_MAX_CALLS },
         })) {
-          if (event.errorCode) throw new Error("Specialist execution failed");
+          if (event.errorCode) {
+            const safeCode = event.errorCode
+              .toUpperCase()
+              .replace(/[^A-Z0-9_]+/g, "_")
+              .replace(/^_+|_+$/g, "")
+              .slice(0, 64);
+            throw new ExpertExecutionError(
+              "provider_response",
+              true,
+              undefined,
+              /^[A-Z0-9_]{1,64}$/.test(safeCode) ? safeCode : undefined,
+              "response_schema",
+            );
+          }
         }
         const submitted = plan as PsychologyPlanSubmission | undefined;
         if (!submitted) throw new Error("Specialist did not submit a plan");
@@ -292,7 +392,27 @@ export function createPsychologyTeam(options: {
               && (source.readStatus === "snippet" || source.readStatus === "document"),
             ) ?? [],
         });
+        sessionAccepted = true;
         return result;
+      } catch (error) {
+        if (sessionId && !sessionAccepted) {
+          try {
+            await options.sessionService.deleteSession({
+              appName: "hello_agent",
+              userId: options.userId,
+              sessionId,
+            });
+          } catch {
+            throw new ExpertExecutionError(
+              "session_persistence",
+              false,
+              undefined,
+              undefined,
+              "session_persistence",
+            );
+          }
+        }
+        throw error;
       } finally {
         executionSignal = undefined;
       }
@@ -372,26 +492,50 @@ export function createPsychologyTeam(options: {
           signal: options.signal,
         }).then(async (outcome) => {
           if (outcome.status === "canceled") {
+            await options.recordSpecialist?.(specialistSnapshot({
+              spec,
+              taskId: options.consultationExecutionId,
+              method: PSYCHOLOGY_APPROACHES[approach].label,
+              status: "unavailable",
+              currentTask: parsed.data.request,
+              handoff: handoffFromDiagnostics([{
+                executionId: options.consultationExecutionId,
+                taskId: options.consultationExecutionId,
+                expertId: approach,
+                attempt: 1,
+                phase: "terminal",
+                errorKind: "cancel",
+                errorName: "AbortError",
+                cause: "canceled",
+                disposition: "canceled",
+              }]),
+            }));
             throw new AppError(408, "生成已超时");
           }
           if (outcome.status !== "completed") {
-            const fact = `与${spec.label}专家的本轮交接未完成`;
-            expertUnavailableNotice = {
-              fact,
-              fallback: `${fact}，由阿 J 继续回应，之后可以再试。`,
-            };
+            await options.recordSpecialist?.(specialistSnapshot({
+              spec,
+              taskId: options.consultationExecutionId,
+              method: PSYCHOLOGY_APPROACHES[approach].label,
+              status: "unavailable",
+              currentTask: parsed.data.request,
+              handoff: handoffFromDiagnostics(outcome.diagnostics),
+            }));
             return {
               expertUnavailable: true,
               expert: spec.label,
-              error:
-                `${fact}，未生成或交付方案。请直接给予支持性回应，向用户明确说明${fact}，由阿 J 继续回应，之后可以再试；不能声称该流派方案已完成，也不要泄漏内部错误细节。`,
+              error: "expertUnavailable",
             };
           }
           const plan = psychologyPlanSchema.parse(outcome.plan);
           plans.set(approach, plan);
           if (options.deliverExpert) {
             if (plan.reply) {
-              await options.deliverExpert({ plan, specialist: spec });
+              await options.deliverExpert({
+                plan,
+                specialist: spec,
+                handoff: completedHandoff(outcome.diagnostics),
+              });
               finished = true;
               return { delivered: true, expert: spec.label, lifecycle: plan.lifecycle ?? "continue" };
             }
@@ -413,17 +557,54 @@ export function createPsychologyTeam(options: {
       consultation: PsychologyConsultation,
     ) {
       const specialist = specialists.find((item) => item.approach === approach);
-      if (!specialist || !options.deliverExpert) return { status: "unavailable" as const };
+      if (!specialist || !options.deliverExpert) {
+        return { status: "unavailable" as const, diagnostics: [] };
+      }
       const outcome = await a2a.consult({
         parentExecutionId: options.consultationExecutionId,
         approach,
         consultation,
         signal: options.signal,
       });
-      if (outcome.status !== "completed") return outcome;
+      if (outcome.status !== "completed") {
+        await options.recordSpecialist?.(specialistSnapshot({
+          spec: specialist.spec,
+          taskId: options.consultationExecutionId,
+          method: PSYCHOLOGY_APPROACHES[approach].label,
+          status: "unavailable",
+          currentTask: consultation.request,
+          handoff: handoffFromDiagnostics(outcome.status === "unavailable" ? outcome.diagnostics : []),
+        }));
+        return outcome;
+      }
       const plan = psychologyPlanSchema.parse(outcome.plan);
-      if (!plan.reply) return { status: "unavailable" as const };
-      await options.deliverExpert({ plan, specialist: specialist.spec });
+      if (!plan.reply) {
+        const diagnostics: ExpertExecutionDiagnostic[] = [{
+          executionId: options.consultationExecutionId,
+          taskId: options.consultationExecutionId,
+          expertId: approach,
+          attempt: 1,
+          phase: "validation",
+          errorKind: "plan_validation",
+          errorName: "Error",
+          cause: "plan_schema",
+          disposition: "nonretryable",
+        }];
+        await options.recordSpecialist?.(specialistSnapshot({
+          spec: specialist.spec,
+          taskId: options.consultationExecutionId,
+          method: PSYCHOLOGY_APPROACHES[approach].label,
+          status: "unavailable",
+          currentTask: consultation.request,
+          handoff: handoffFromDiagnostics(diagnostics),
+        }));
+        return { status: "unavailable" as const, diagnostics };
+      }
+      await options.deliverExpert({
+        plan,
+        specialist: specialist.spec,
+        handoff: completedHandoff(outcome.diagnostics),
+      });
       finished = true;
       return { status: "completed" as const, plan };
     },
@@ -444,20 +625,6 @@ export function createPsychologyTeam(options: {
           reply.artifacts?.length)
       )
         return "专家提示需要立即安全关照：请使用 supportive，直接回应，不布置表单或其他作品。";
-    },
-    prepareUnavailableFallbackReply(reply: AJoker): AJoker {
-      const notice = expertUnavailableNotice;
-      if (!notice) return reply;
-      if (urgentFallback) return reply;
-      if (reply.aJoker.includes(notice.fact)) return reply;
-      const noticeText = notice.fallback;
-      const separator = "\n";
-      const original = reply.aJoker;
-      const budget = 1000 - noticeText.length - separator.length;
-      const aJoker = original.length <= budget
-        ? `${noticeText}${separator}${original}`
-        : `${noticeText}${separator}${original.slice(0, Math.max(0, budget))}`;
-      return { ...reply, aJoker };
     },
     finish() {
       finished = true;

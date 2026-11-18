@@ -112,4 +112,43 @@ describe("ChatComposer", () => {
       root().root.findAll((node) => node.children.includes("host-voice-input")),
     ).toHaveLength(1);
   });
+
+  it("does not report blur when a focused parent rerenders with a new callback", () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    act(() => {
+      renderer = create(createElement(ChatComposer, {
+        ...defaults(),
+        onKeyboardFocusChange: first,
+      }));
+    });
+    act(() => root().root.findByType("textarea").props.onFocus({ detail: { height: 300 } }));
+    expect(first).toHaveBeenLastCalledWith(true, { height: 300 });
+    act(() => renderer!.update(createElement(ChatComposer, {
+      ...defaults(),
+      text: "parent state changed",
+      onKeyboardFocusChange: second,
+    })));
+    expect(first).not.toHaveBeenCalledWith(false, { height: 0 });
+    expect(second).not.toHaveBeenCalledWith(false, { height: 0 });
+    act(() => renderer!.unmount());
+    expect(second).toHaveBeenLastCalledWith(false, { height: 0 });
+    renderer = undefined;
+  });
+
+  it("does not restore focus from a keyboard-height event after blur", () => {
+    const focus = vi.fn();
+    act(() => {
+      renderer = create(createElement(ChatComposer, {
+        ...defaults(),
+        onKeyboardFocusChange: focus,
+      }));
+    });
+    const textarea = root().root.findByType("textarea");
+    act(() => textarea.props.onFocus({ detail: { height: 300 } }));
+    act(() => textarea.props.onBlur());
+    act(() => textarea.props.onKeyboardHeightChange({ detail: { height: 0 } }));
+    expect(focus).toHaveBeenLastCalledWith(false, { height: 0 });
+    expect(focus).toHaveBeenCalledTimes(2);
+  });
 });

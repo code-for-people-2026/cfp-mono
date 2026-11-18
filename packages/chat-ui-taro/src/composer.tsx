@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, Image, Text, Textarea, View } from "./taro-components";
 import type { VoiceInputProps } from "./voice-input";
 
@@ -72,6 +72,7 @@ export interface ChatComposerProps<Id extends number | string> {
   maxAttachments: number;
   attachmentLimit: string;
   voicePrivacy: ReactNode;
+  inputFixed?: boolean;
   renderIcon(
     name: ChatComposerIconName,
     options?: { inverted?: boolean },
@@ -83,6 +84,10 @@ export interface ChatComposerProps<Id extends number | string> {
   onVoiceText(text: string): void;
   onImage(source?: ImageSource): void;
   onRemoveImage(id: Id): void;
+  onKeyboardFocusChange?(
+    focused: boolean,
+    event: { height: number },
+  ): void;
   onSend(): void;
 }
 
@@ -99,6 +104,15 @@ export function ChatComposer<Id extends number | string>(
     recording ||
     props.attachments.length >= props.maxAttachments;
   const showSend = !voice && (hasDraft || props.busy);
+  const notifyKeyboardFocus = props.onKeyboardFocusChange;
+  const notifyKeyboardFocusRef = useRef(notifyKeyboardFocus);
+  const keyboardFocusedRef = useRef(false);
+  notifyKeyboardFocusRef.current = notifyKeyboardFocus;
+
+  useEffect(() => {
+    if (voice) return;
+    return () => notifyKeyboardFocusRef.current?.(false, { height: 0 });
+  }, [voice]);
 
   function chooseImage(source?: ImageSource) {
     if (imageDisabled) return;
@@ -153,15 +167,37 @@ export function ChatComposer<Id extends number | string>(
                 onInput={(event: { detail: { value: string } }) =>
                   props.onText(event.detail.value)
                 }
-                onFocus={() => setToolsOpen(false)}
+                onFocus={(event: { detail: { height: number } }) => {
+                  setToolsOpen(false);
+                  keyboardFocusedRef.current = true;
+                  notifyKeyboardFocus?.(true, {
+                    height: event.detail.height,
+                  });
+                }}
+                onBlur={() => {
+                  keyboardFocusedRef.current = false;
+                  notifyKeyboardFocus?.(false, { height: 0 })
+                }}
                 placeholder={props.placeholder}
                 maxlength={props.maxTextLength}
                 autoHeight
                 adjustPosition={
                   process.env.TARO_ENV === "h5" ? undefined : false
                 }
-                fixed={process.env.TARO_ENV !== "h5"}
+                fixed={
+                  process.env.TARO_ENV === "h5" ? undefined : props.inputFixed
+                }
                 disabled={props.disabled}
+                onKeyboardHeightChange={(
+                  event: { detail: { height: number } },
+                ) => {
+                  if (keyboardFocusedRef.current) {
+                    notifyKeyboardFocus?.(true, {
+                      height: event.detail.height,
+                    });
+                  }
+                }
+                }
               />
             )}
         <Button

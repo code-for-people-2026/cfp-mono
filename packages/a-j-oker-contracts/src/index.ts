@@ -57,6 +57,80 @@ export const handoffPreambleSchema = z
   .trim()
   .min(12)
   .max(320);
+export const expertExecutionDiagnosticSchema = z.object({
+  executionId: z.string().trim().min(1).max(128),
+  taskId: z.string().trim().min(1).max(128),
+  expertId: approachSchema,
+  attempt: z.number().int().min(1).max(3),
+  phase: z.enum([
+    "recovery",
+    "execution",
+    "validation",
+    "artifact",
+    "retry",
+    "terminal",
+  ]),
+  errorKind: z.enum([
+    "provider_network",
+    "provider_http",
+    "provider_response",
+    "plan_validation",
+    "no_submission",
+    "session_persistence",
+    "auth",
+    "policy",
+    "cancel",
+    "unknown",
+  ]),
+  errorName: z.enum([
+    "DeepSeekError",
+    "ZodError",
+    "AbortError",
+    "TimeoutError",
+    "Error",
+  ]),
+  status: z.number().int().min(100).max(599).optional(),
+  code: z.string().trim().regex(/^[A-Z0-9_]{1,64}$/).optional(),
+  cause: z.enum([
+    "network",
+    "timeout",
+    "http_status",
+    "response_json",
+    "response_schema",
+    "response_envelope",
+    "plan_schema",
+    "approach_mismatch",
+    "no_submission",
+    "session_persistence",
+    "credential",
+    "policy",
+    "canceled",
+    "unknown",
+  ]),
+  disposition: z.enum([
+    "retry_scheduled",
+    "retry_exhausted",
+    "nonretryable",
+    "canceled",
+    "recovery_unavailable",
+    "completed",
+  ]),
+}).strict();
+export type ExpertExecutionDiagnostic = z.output<typeof expertExecutionDiagnosticSchema>;
+export const expertHandoffStateSchema = z.object({
+  schemaVersion: z.literal(1),
+  status: z.enum(["active", "completed", "failed"]),
+  attempts: z.number().int().min(0).max(3),
+  finalDisposition: z.enum([
+    "retry_exhausted",
+    "nonretryable",
+    "canceled",
+    "recovery_unavailable",
+    "completed",
+  ]),
+  diagnostics: z.array(expertExecutionDiagnosticSchema).max(3),
+}).strict();
+export type ExpertHandoffState = z.output<typeof expertHandoffStateSchema>;
 export const externalSchema = z.object({
   sessionId: z.number().int().positive(),
   requestId: z.string().uuid(),
@@ -73,6 +147,7 @@ export const sessionSchema = z.object({
 export const sessionsSchema = z.array(sessionSchema);
 export const turnResultSchema = z.object({
   id: z.number().int().positive(),
+  retryOfTurnId: z.number().int().positive().optional(),
   input: inputSchema,
   status: z.enum(["running", "completed", "failed"]),
   visibility: z.literal("quarantined").optional(),
@@ -96,6 +171,7 @@ export const turnResultSchema = z.object({
       layout: z.enum(["reflection", "step_by_step", "action_plan"]),
       subtitle: z.string().trim().min(1).max(80).optional(),
       status: z.enum(["active", "completed", "unavailable"]),
+      handoff: expertHandoffStateSchema.optional(),
       // Opaque local-asset identity. Historical snapshots may predate it and
       // remain valid; AJ clients resolve only references they explicitly bundle.
       avatarReference: presentationAvatarSchema.shape.reference.optional(),
