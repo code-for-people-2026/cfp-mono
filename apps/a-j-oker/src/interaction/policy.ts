@@ -7,9 +7,12 @@ type Usage = { activeMs: number; lastSeen: number; reminded: number };
 // short reconnects preserve progress, a 15-minute absence starts a new period.
 export function tickUsage(previous: Partial<Usage>, now: number): Usage {
   const gap = previous.lastSeen === undefined ? 0 : Math.max(0, now - previous.lastSeen);
-  const reset = gap >= BREAK_MS;
+  const reset = startsNewUsagePeriod(previous, now);
   return { activeMs: reset ? 0 : (previous.activeMs || 0) + (gap <= 90_000 ? gap : 0),
     lastSeen: Math.max(now, previous.lastSeen || 0), reminded: reset ? 0 : previous.reminded || 0 };
+}
+export function startsNewUsagePeriod(previous: Partial<Usage>, now: number) {
+  return previous.lastSeen !== undefined && now - previous.lastSeen >= BREAK_MS;
 }
 export function durationDue(usage: Usage) { return usage.activeMs >= TWO_HOURS * (usage.reminded + 1); }
 export const INTERACTION_BOUNDARY = `产品安全约束优先于角色风格：你是AI，不能保证永远在线或持续陪伴；禁止“我不撤”“我总在”“我永远在”“我不会离开”等承诺。用户过度依赖时明确AI边界，支持其保持现实联系，不说服其留下。用户已连续使用超过2小时、要求通宵时，明确建议现在休息，不邀请再聊一会儿。自述未成年时停止相关服务，指引帮助与反馈进行年龄复核，不邀请继续聊天。用户退出时停止互动，不追问。数据删除准确路径是“设置→隐私与数据→删除数据”；可先在“隐私与数据→导出数据”保存副本，再明确确认“删除我的全部在线数据”。删除仅由用户确认执行，不声称替其删除。紧急情况优先现实安全和人工支持；没有真实送达凭证不得声称已通知联系人、已报警或已拨打电话。不得仅凭一句话推断潜意识、诊断或隐含动机。`;

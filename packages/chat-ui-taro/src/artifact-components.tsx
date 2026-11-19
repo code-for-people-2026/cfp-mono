@@ -28,7 +28,10 @@ import {
 } from "@cfp/base-chat-protocol";
 import type { SurfaceModel } from "@a2ui/web_core/v0_9";
 import { useArtifactUi } from "./artifact-ui";
-import { useSheetFieldFocus } from "./bottom-sheet";
+import {
+  useHasSheetFieldFocus,
+  useSheetFieldFocus,
+} from "./bottom-sheet";
 
 export function ArtifactImage({
   url,
@@ -432,6 +435,7 @@ export function ArtifactComponent({
 }) {
   const context = useArtifactState();
   const focusField = useSheetFieldFocus();
+  const inSheet = useHasSheetFieldFocus();
   const {
     values,
     locked,
@@ -672,7 +676,8 @@ export function ArtifactComponent({
                 placeholder={labels.otherChoice}
                 maxlength={1200}
                 disabled={locked}
-                adjustPosition={false}
+                adjustPosition={!inSheet}
+                cursorSpacing={24}
                 onFocus={() => focusField(`artifact_field_${fieldId}`)}
                 onInput={(event: { detail: { value: string } }) =>
                   updateOther(event.detail.value)
@@ -711,7 +716,8 @@ export function ArtifactComponent({
               placeholder={field.placeholder || "写下你愿意分享的部分"}
               maxlength={1200}
               disabled={locked}
-              adjustPosition={false}
+              adjustPosition={!inSheet}
+              cursorSpacing={24}
               onFocus={() => focusField(`artifact_field_${fieldId}`)}
               onInput={(event: { detail: { value: string } }) =>
                 update(event.detail.value)
@@ -730,7 +736,8 @@ export function ArtifactComponent({
               }
               maxlength={1200}
               disabled={locked}
-              adjustPosition={false}
+              adjustPosition={!inSheet}
+              cursorSpacing={24}
               onFocus={() => focusField(`artifact_field_${fieldId}`)}
               onInput={(event: { detail: { value: string } }) =>
                 update(event.detail.value)

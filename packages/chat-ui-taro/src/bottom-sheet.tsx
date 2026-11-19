@@ -10,8 +10,11 @@ import {
 import { Button, ScrollView, View } from "./taro-components";
 import { useArtifactUi } from "./artifact-ui";
 
-const FocusField = createContext<(id: string) => void>(() => {});
-export const useSheetFieldFocus = () => useContext(FocusField);
+const noopFocusField = () => {};
+const FocusField = createContext<((id: string) => void) | null>(null);
+export const useSheetFieldFocus = () =>
+  useContext(FocusField) ?? noopFocusField;
+export const useHasSheetFieldFocus = () => useContext(FocusField) !== null;
 
 export function BottomSheet({
   title,

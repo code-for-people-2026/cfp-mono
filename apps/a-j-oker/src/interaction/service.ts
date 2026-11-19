@@ -10,13 +10,21 @@ import { audit } from "../operations/audit";
 import { canReview, isAdministrator } from "../operations/policy";
 import { feishuAlertStatus } from "../operations/alerts";
 import { privacyService } from "../privacy/service";
-import { durationDue, noticeText, tickUsage, TWO_HOURS } from "./policy";
+import {
+  durationDue,
+  noticeText,
+  startsNewUsagePeriod,
+  tickUsage,
+  TWO_HOURS,
+} from "./policy";
 import { interactionAssessmentSchema } from "../domain/moderation";
 import { withCredentialExecution } from "../server/credential-lock";
 
 const stateSchema = z.object({
   activeMs: z.number().nonnegative().default(0), lastSeen: z.number().nonnegative().default(0), reminded: z.number().nonnegative().default(0),
   notice: z.object({ id: z.string(), kind: z.enum(["duration", "dependency", "crisis"]), text: z.string() }).nullable().default(null),
+  // Internal-only provenance. It is intentionally not returned in status().
+  noticeSource: z.enum(["timer", "semantic"]).optional(),
   cipher: z.string().optional(), consentedAt: z.string().optional(), contactVersion: z.string().optional(),
 }).default({ activeMs: 0, lastSeen: 0, reminded: 0, notice: null });
 type State = z.output<typeof stateSchema>;
@@ -79,8 +87,16 @@ export class InteractionService {
   async heartbeat() {
     await new AgeService(this.payload, this.owner).requireCapability();
     await this.change((s) => {
-      const next = { ...s, ...tickUsage(s, Date.now()) };
-      if (durationDue(next) && !next.notice) next.notice = { id: randomUUID(), kind: "duration", text: noticeText.duration };
+      const now = Date.now();
+      const next = { ...s, ...tickUsage(s, now) };
+      if (startsNewUsagePeriod(s, now) && next.notice?.kind === "duration" && next.noticeSource !== "semantic") {
+        next.notice = null;
+        next.noticeSource = undefined;
+      }
+      if (durationDue(next) && !next.notice) {
+        next.notice = { id: randomUUID(), kind: "duration", text: noticeText.duration };
+        next.noticeSource = "timer";
+      }
       return next;
     });
     return this.status();
@@ -88,7 +104,7 @@ export class InteractionService {
   async acknowledge(value: unknown) {
     if (this.owner.auth === "bearer") throw new AppError(403, "请本人确认提醒");
     const { id } = z.object({ id: z.string().uuid() }).strict().parse(value);
-    await this.change((s) => s.notice?.id === id ? { ...s, reminded: s.notice.kind === "duration" ? Math.floor(s.activeMs / TWO_HOURS) : s.reminded, notice: null } : s);
+    await this.change((s) => s.notice?.id === id ? { ...s, reminded: s.notice.kind === "duration" ? Math.floor(s.activeMs / TWO_HOURS) : s.reminded, notice: null, noticeSource: undefined } : s);
     return this.status();
   }
   async inspectInput(text: string, sessionId: number, requestId: string, semanticVerdict: unknown): Promise<string | undefined> {
@@ -113,7 +129,7 @@ export class InteractionService {
     if (flags.exit && !flags.crisis) return "已停止本次聊天。你可以直接离开页面；如需退出账号，可打开设置→隐私与数据。";
     const kind = flags.crisis ? "crisis" : flags.dependency ? "dependency" : flags.overuse ? "duration" : undefined;
     const notice = kind === "duration" ? noticeText.semanticOveruse : kind ? noticeText[kind] : undefined;
-    if (kind && notice) await this.change((s) => ({ ...s, notice: { id: randomUUID(), kind, text: notice } }));
+    if (kind && notice) await this.change((s) => ({ ...s, notice: { id: randomUUID(), kind, text: notice }, noticeSource: "semantic" }));
     if (kind && notice) return `${notice}${kind === "crisis" ? ` 人工联系电话：${interactionSupport().phone}（孙逢，全天可联系，不保证即时接听）。` : ""}`;
     return undefined;
   }
