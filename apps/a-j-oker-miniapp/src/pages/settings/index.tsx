@@ -22,6 +22,7 @@ export default function SettingsPage() {
           <SettingsRow title="互动安全" description="人工支持与紧急联系人" onClick={() => void Taro.navigateTo({ url: "/pages/safety/index" })} />
           <SettingsRow title="帮助与反馈" description="提交问题，查看处理进度" onClick={() => void openHelp()} />
         </View>
+        <Text className="settings-build-label">版本 {HELLO_BUILD_LABEL}</Text>
       </View>
     </View>
   </View>;

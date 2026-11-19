@@ -34,7 +34,7 @@ beforeEach(() => {
   api.establishIdentity.mockResolvedValue(undefined);
   api.getPrivacy.mockResolvedValue({ policy, state: "unaccepted", consent: null, expiresAt: null, hasRecoveryCode: false });
 });
-afterEach(() => { act(() => renderer?.unmount()); });
+afterEach(() => { act(() => renderer?.unmount()); vi.unstubAllGlobals(); });
 
 it("隐私首页只展示管理入口，授权和政策使用独立路由", async () => {
   await mount(PrivacyHome);
@@ -147,8 +147,10 @@ it("帮助联系渠道读取失败显示错误，刷新后恢复", async () => {
   expect(view()).toContain(policy.contact);
 });
 it("独立设置页保留分组入口，互动安全进入子页面", async () => {
+  vi.stubGlobal("HELLO_BUILD_LABEL", "9.8.7");
   const { default: Settings } = await import("../src/pages/settings/index");
   await mount(Settings);
+  expect(renderer.root.findAllByType("text").map((item) => item.children.join("")).join(" ")).toContain("版本 9.8.7");
   expect(view()).not.toContain("mode-option");
   expect(view()).not.toContain("sheet-overlay");
   act(() => button("连接方式").props.onClick());

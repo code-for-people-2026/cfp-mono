@@ -1052,6 +1052,15 @@ input {
 .settings-section button[disabled] {
   opacity: 0.45;
 }
+.settings-build-label {
+  display: block;
+  margin-top: 14px;
+  color: #7b8a80;
+  font-size: 12px;
+  line-height: 1.8;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
 
 .artifact-preview-icon .chat-icon { width: 19px; height: 19px; }
 .artifact-thumbnail-image .taro-img__mode-aspectfit { left: 50%; transform: translate(-50%, -50%); }
