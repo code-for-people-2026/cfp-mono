@@ -43,9 +43,13 @@ import {
   readSubmissionFailure,
   rememberSubmissionFailure,
 } from "../../chat/submission-failures";
-import { PresentationFrame } from "@cfp/chat-ui-taro/artifacts";
+import {
+  InlineFormKeyboardContext,
+  PresentationFrame,
+} from "@cfp/chat-ui-taro/artifacts";
 import { CopyMessage, MessageText } from "../../chat/message-text";
 import { ChatIcon } from "../../chat/icon";
+import { useInlineFormKeyboard } from "../../chat/inline-form-keyboard";
 import {
   type ClientEvent,
   type RunProgress,
@@ -136,6 +140,12 @@ export default function Chat() {
   const [composerKeyboardActive, setComposerKeyboardActive] = useState(false);
   const [composerKeyboardHeight, setComposerKeyboardHeight] = useState(0);
   const [composerFloating, setComposerFloating] = useState(false);
+  const {
+    handlers: inlineFormKeyboardHandlers,
+    overlay: inlineFormKeyboardOverlay,
+    active: inlineFormKeyboardActive,
+  } = useInlineFormKeyboard();
+  const inlineFormKeyboardActiveRef = useRef(false);
   const handleComposerKeyboardFocus = useCallback((
     focused: boolean,
     event: { height: number },
@@ -572,10 +582,16 @@ export default function Chat() {
       scrollRevision.current++;
     };
   }, []);
+
+  useEffect(() => {
+    inlineFormKeyboardActiveRef.current = inlineFormKeyboardActive;
+  }, [inlineFormKeyboardActive]);
+
   useEffect(() => {
     if (!history.length && !pending) return;
+    if (inlineFormKeyboardActiveRef.current) return;
     Taro.nextTick(() => {
-      if (followLatest.current)
+      if (followLatest.current && !inlineFormKeyboardActiveRef.current)
         void Taro.pageScrollTo({ selector: "#chat-end", duration: 0 }).catch(
           () => {},
         );
@@ -925,9 +941,14 @@ export default function Chat() {
     }
   }
   return (
-    <View className={h5 ? "h5-shell" : "native-shell"}>
+    <View
+      className={h5 ? "h5-shell" : `native-shell${inlineFormKeyboardActive ? " is-form-keyboard-open" : ""}`}
+    >
       <InteractionGuard enabled={visible && !loading && !!age?.allowed && consentCurrent(privacy)} revision={history.length} onUnavailable={() => { void api.getAge().then((s) => { setAge(s); if (!s.allowed) setAgeOpen(true); }).catch(() => {}); }} />
-      <View className="chat-app">
+      <InlineFormKeyboardContext.Provider
+        value={h5 ? null : inlineFormKeyboardHandlers}
+      >
+        <View className="chat-app">
         <ChatNavigation
           profile={profile}
           avatarSource={avatarSource}
@@ -1156,11 +1177,13 @@ export default function Chat() {
                             candidate.retryOfTurnId === row.id
                           ) && (
                             <Button
-                              className="control message-action message-retry-action"
+                              className="control message-action"
+                              aria-label="重试这一轮"
+                              onLongPress={() => void Taro.showToast({ title: "重试这一轮", icon: "none" })}
                               disabled={disabled || historyFailed}
                               onClick={() => void retryFailedTurn(row)}
                             >
-                              重试这一轮
+                              <ChatIcon name="rotateCw" />
                             </Button>
                           )}
                         {row.imageGeneration?.canResume && <Button className="control message-action" disabled={disabled} onClick={() => void resumeImage(row)}>继续取图</Button>}
@@ -1332,6 +1355,15 @@ export default function Chat() {
             )}
           </View>
         </ChatDock>
+        <View
+          aria-hidden
+          className="form-keyboard-space"
+          style={{
+            height: inlineFormKeyboardActive
+              ? `${inlineFormKeyboardOverlay + 24}px`
+              : "0px",
+          }}
+        />
         {memoryOpen && (
           <MemoryPanel
             platformConfigured={!!settings?.platformConfigured}
@@ -1349,7 +1381,8 @@ export default function Chat() {
             onError={problem}
           />
         )}
-      </View>
+        </View>
+      </InlineFormKeyboardContext.Provider>
       {(ageOpen || !age?.loggedIn) && !identityExpired && <AgeGate profile={profile} avatarSource={avatarSource} status={age} loadingError={error} privacyReady={consentCurrent(privacy)} onChange={setAge}
         onRefresh={boot} onLogin={async () => { clearIdentityView(); await boot(); }}
         onPrivacy={() => void openPrivacy(age?.allowed && !consentCurrent(privacy) ? "authorization" : undefined)}

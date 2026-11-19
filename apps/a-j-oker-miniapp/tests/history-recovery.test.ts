@@ -205,8 +205,8 @@ it("失败回合的重试由服务端恢复原输入，双击不重复且不改�
   const textarea = renderer!.root.findByType("textarea");
   act(() => textarea.props.onInput({ detail: { value: "还没发送的草稿" } }));
   const retry = renderer!.root.findAllByType("button")
-    .find((button) => button.props.children === "重试这一轮")!;
-  expect(retry.props.className).toContain("message-retry-action");
+    .find((button) => button.props["aria-label"] === "重试这一轮")!;
+  expect(retry.props.className).toContain("message-action");
   await act(async () => {
     const first = retry.props.onClick();
     retry.props.onClick();
@@ -263,11 +263,11 @@ it("重试再次失败后只保留最新可操作按钮，刷新后仍可继续�
 
   await act(async () => {
     await renderer!.root.findAllByType("button")
-      .find((button) => button.props.children === "重试这一轮")!
+      .find((button) => button.props["aria-label"] === "重试这一轮")!
       .props.onClick();
   });
   const actionable = renderer!.root.findAllByType("button")
-    .filter((button) => button.props.children === "重试这一轮");
+    .filter((button) => button.props["aria-label"] === "重试这一轮");
   expect(actionable).toHaveLength(1);
   await act(async () => { await actionable[0].props.onClick(); });
 
@@ -277,7 +277,7 @@ it("重试再次失败后只保留最新可操作按钮，刷新后仍可继续�
   expect(text()).not.toContain("第一次失败");
   expect(text()).not.toContain("第二次失败");
   expect(renderer!.root.findAllByType("button")
-    .filter((button) => button.props.children === "重试这一轮"))
+    .filter((button) => button.props["aria-label"] === "重试这一轮"))
     .toHaveLength(0);
 });
 

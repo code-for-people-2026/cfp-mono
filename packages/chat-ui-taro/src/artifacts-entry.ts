@@ -5,6 +5,8 @@ export {
   tableCellText,
   useArtifactState,
   type ArtifactProps,
+  InlineFormKeyboardContext,
+  type InlineFormKeyboardContextValue,
 } from "./artifact-components";
 export { ArtifactPreview, CompactCard } from "./artifact-preview";
 export { ArtifactSurfaces, Artifacts, LiveArtifacts, PresentationFrame, PresentationOriginHeader, type ArtifactRendererAdapter } from "./artifacts";

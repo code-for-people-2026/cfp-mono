@@ -9,6 +9,7 @@ import x from "lucide-static/icons/x.svg?raw";
 import copy from "lucide-static/icons/copy.svg?raw";
 import check from "lucide-static/icons/check.svg?raw";
 import flag from "lucide-static/icons/flag.svg?raw";
+import rotateCw from "lucide-static/icons/rotate-cw.svg?raw";
 
 import menu from "lucide-static/icons/menu.svg?raw";
 import squarePen from "lucide-static/icons/square-pen.svg?raw";
@@ -38,6 +39,7 @@ const icons = {
   copy,
   check,
   flag,
+  rotateCw,
 };
 type IconName = keyof typeof icons;
 
