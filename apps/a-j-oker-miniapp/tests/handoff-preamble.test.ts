@@ -86,8 +86,14 @@ describe("expert handoff preamble presentation", () => {
     );
     expect(page).toMatch(/busy && !pending[\s\S]*?<HandoffPreamble text=\{interimPreamble\.text\}/);
     const pendingStage = page.slice(page.indexOf("{pending && ("), page.indexOf("{busy && !pending"));
-    expect(pendingStage).toContain("<HandoffPreamble text={interimPreamble.text} />");
+    expect(pendingStage).toContain("{pendingAssistantMessage}");
+    const pendingAssistantMessageView = page.slice(
+      page.indexOf("const pendingAssistantMessage"),
+      page.indexOf("const returnToAj"),
+    );
+    expect(pendingAssistantMessageView).toContain("<HandoffPreamble text={interimPreamble.text} />");
     expect(pendingStage).not.toContain("specialist-handoff-notice");
+    expect(pendingAssistantMessageView).not.toContain("specialist-handoff-notice");
     expect(page).not.toContain("interimPreamble.text || progress.text");
   });
 });

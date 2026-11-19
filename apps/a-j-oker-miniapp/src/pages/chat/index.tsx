@@ -167,6 +167,7 @@ export default function Chat() {
     text: string;
     images: Attachment[];
   }>();
+  const [retryingTurnId, setRetryingTurnId] = useState<number>();
   const followLatest = useRef(true);
   const pageTop = useRef(0);
   const scrollRevision = useRef(0);
@@ -317,6 +318,7 @@ export default function Chat() {
     setMemory(undefined);
     setProgress(undefined);
     setPending(undefined);
+    setRetryingTurnId(undefined);
     setMemoryOpen(false);
     setNavigationOpen(false);
     const previousFailure = submissions.current?.failureFor(id);
@@ -472,6 +474,7 @@ export default function Chat() {
     setInputMode("voice");
     setAttachments([]);
     setPending(undefined);
+    setRetryingTurnId(undefined);
     setProgress(undefined);
     setBusy(false);
     sendLock.current = false;
@@ -807,6 +810,25 @@ export default function Chat() {
   const activeSpecialist = activeSpecialistTurn(history);
   const interimPreamble = interimHandoffPreamble(history, progress);
   const visibleHistory = visibleRetryLineage(history);
+  const pendingAssistantMessage = (
+    <View className="message assistant-message">
+      <View className="message-main">
+        <View className="bubble assistant-bubble thinking">
+          {busy && interimPreamble && (
+            <HandoffPreamble text={interimPreamble.text} />
+          )}
+          <DancingLoader />
+          <LoadingCarousel
+            progress={progress}
+            resetKey={loadingRun}
+          />
+          {progress && (
+            <LiveArtifacts messages={progress.messages} />
+          )}
+        </View>
+      </View>
+    </View>
+  );
   const returnToAj = async (taskId: string) => {
     try {
       await send({
@@ -872,6 +894,7 @@ export default function Chat() {
     const scope = sessionId;
     if (!scope) return;
     sendLock.current = true;
+    setRetryingTurnId(row.id);
     setBusy(true);
     setError("");
     setLoadingRun((current) => current + 1);
@@ -899,6 +922,7 @@ export default function Chat() {
       }
     } finally {
       if (pageAlive.current && version === scopeVersion.current) {
+        setRetryingTurnId(undefined);
         setBusy(false);
         sendLock.current = false;
       }
@@ -1067,6 +1091,10 @@ export default function Chat() {
                     </View>
                   </View>
                 )}
+                {retryingTurnId === row.id ? (
+                  pendingAssistantMessage
+                ) : (
+                  <>
                 {row.specialist?.handoff?.status === "failed" && (
                   <View className="handoff-failure-notice" role="status">
                     <Text>{row.status === "completed"
@@ -1211,6 +1239,8 @@ export default function Chat() {
                     </View>
                   </View>
                 </View>
+                  </>
+                )}
               </View>
             ))}
             {pending && (
@@ -1230,23 +1260,7 @@ export default function Chat() {
                     </View>
                   </View>
                 </View>
-                <View className="message assistant-message">
-                  <View className="message-main">
-                    <View className="bubble assistant-bubble thinking">
-                      {busy && interimPreamble && (
-                        <HandoffPreamble text={interimPreamble.text} />
-                      )}
-                      <DancingLoader />
-                      <LoadingCarousel
-                        progress={progress}
-                        resetKey={loadingRun}
-                      />
-                      {progress && (
-                        <LiveArtifacts messages={progress.messages} />
-                      )}
-                    </View>
-                  </View>
-                </View>
+                {pendingAssistantMessage}
               </View>
             )}
             {busy && !pending && progress && (

@@ -184,6 +184,12 @@ it("失败回合的重试由服务端恢复原输入，双击不重复且不改�
   history = [failed];
   const originalRequest = platform.request.getMockImplementation()!;
   let retries = 0;
+  let releaseRetry!: (response: { statusCode: number; data: Turn }) => void;
+  const retryGate = new Promise<{ statusCode: number; data: Turn }>(
+    (resolve) => {
+      releaseRetry = resolve;
+    },
+  );
   platform.request.mockImplementation(async (options: { url: string; data?: unknown }) => {
     if (options.url.endsWith("/turn-retry")) {
       retries++;
@@ -197,7 +203,7 @@ it("失败回合的重试由服务端恢复原输入，双击不重复且不改�
         retryOfTurnId: 9,
       };
       history = [failed, completed];
-      return { statusCode: 200, data: completed };
+      return retryGate.then(() => ({ statusCode: 200, data: completed }));
     }
     return originalRequest(options);
   });
@@ -207,11 +213,39 @@ it("失败回合的重试由服务端恢复原输入，双击不重复且不改�
   const retry = renderer!.root.findAllByType("button")
     .find((button) => button.props["aria-label"] === "重试这一轮")!;
   expect(retry.props.className).toContain("message-action");
+  let retrying!: Promise<void>;
   await act(async () => {
-    const first = retry.props.onClick();
+    retrying = retry.props.onClick();
     retry.props.onClick();
-    await first;
+    await Promise.resolve();
   });
+  expect(
+    renderer!.root.findAll(
+      (node) => node.props.className === "dancing-loader",
+    ),
+  ).toHaveLength(1);
+  expect(
+    renderer!.root.findAll(
+      (node) => node.props.className === "loading-carousel",
+    ),
+  ).toHaveLength(1);
+  expect(text()).not.toContain("这一次没有完成");
+  expect(text().match(/填写「今天的感受」/g)).toHaveLength(1);
+  expect(retries).toBe(1);
+  await act(async () => {
+    releaseRetry({ statusCode: 200, data: history[1] });
+    await retrying;
+  });
+  expect(
+    renderer!.root.findAll(
+      (node) => node.props.className === "dancing-loader",
+    ),
+  ).toHaveLength(0);
+  expect(
+    renderer!.root.findAll(
+      (node) => node.props.className === "loading-carousel",
+    ),
+  ).toHaveLength(0);
   expect(retries).toBe(1);
   expect(renderer!.root.findByType("textarea").props.value).toBe("还没发送的草稿");
   expect(text()).not.toContain("重试这一轮");
