@@ -3,8 +3,8 @@ import { DeepSeekError } from "../models/deepseek";
 
 export const EXPERT_EXECUTION_MAX_ATTEMPTS = 3;
 
-export type ExpertExecutionErrorKind = ExpertExecutionDiagnostic["errorKind"];
-export type ExpertExecutionSafeCause = ExpertExecutionDiagnostic["cause"];
+type ExpertExecutionErrorKind = ExpertExecutionDiagnostic["errorKind"];
+type ExpertExecutionSafeCause = ExpertExecutionDiagnostic["cause"];
 
 export class ExpertExecutionError extends Error {
   constructor(
@@ -18,7 +18,7 @@ export class ExpertExecutionError extends Error {
   }
 }
 
-export interface ExpertExecutionClassification {
+interface ExpertExecutionClassification {
   retryable: boolean;
   canceled: boolean;
   diagnostic: Omit<ExpertExecutionDiagnostic, "disposition">;
