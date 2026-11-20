@@ -2,6 +2,7 @@ export * from "./age";
 export * from "./profile";
 export * from "./service-scope";
 export * from "./presentation";
+export * from "./retry-lineage";
 import { z } from "zod";
 import {
   legacyArtifactsSchema,

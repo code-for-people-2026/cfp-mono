@@ -402,6 +402,182 @@ it("刷新恢复重试链时只显示最新结果，并保留非祖先的表单�
   expect(text()).not.toContain("旧的阿 J 兜底回复");
   expect(renderer!.root.findAllByProps({ className: "turn" })).toHaveLength(3);
 });
+it.each([
+  ["pending", true],
+  ["submitting", false],
+  ["stored", false],
+] as const)("图片仍在提交或保存时不提供普通重试：%s", async (status, canResume) => {
+  history = [
+    {
+      ...initial,
+      id: 201,
+      input: { text: "画一张能稳住的图", mediaIds: [] },
+      status: "failed",
+      aJoker: null,
+      error: "图片仍在处理",
+      imageGeneration: { status, canResume },
+    },
+  ];
+
+  await mount();
+
+  expect(
+    renderer!.root.findAllByType("button").filter(
+      (button) => button.props["aria-label"] === "重试这一轮",
+    ),
+  ).toHaveLength(0);
+  expect(text()).toContain("画一张能稳住的图");
+  expect(text()).toContain("图片仍在处理");
+  expect(text().includes("继续取图")).toBe(canResume);
+});
+
+it("已交付兜底重试期间保留原回复和卡片，失败可再试且成功后替换", async () => {
+  const { artifacts } =
+    await import("../../../packages/base-chat-protocol/test/fixtures");
+  const fallbackInput = { text: "请专家帮我梳理", mediaIds: [] };
+  const fallback: Turn = {
+    ...initial,
+    id: 210,
+    input: fallbackInput,
+    aJoker: "旧的阿 J 兜底回复",
+    artifacts: [artifacts.find((item) => item.kind === "card")!],
+    specialist: {
+      taskId: "task-210",
+      expertId: "cbt",
+      name: "心理专家",
+      method: "认知行为练习",
+      configurationRevision: "test",
+      theme: "sage",
+      layout: "reflection",
+      status: "unavailable",
+      handoff: {
+        schemaVersion: 1,
+        status: "failed",
+        attempts: 3,
+        finalDisposition: "retry_exhausted",
+        diagnostics: [],
+      },
+      sources: [],
+    },
+  };
+  history = [fallback];
+  const originalRequest = platform.request.getMockImplementation()!;
+  let releaseRunning!: (response: { statusCode: number; data: Turn }) => void;
+  const runningGate = new Promise<{ statusCode: number; data: Turn }>(
+    (resolve) => {
+      releaseRunning = resolve;
+    },
+  );
+  platform.request.mockImplementation(async (options: { url: string; data?: unknown }) => {
+    if (options.url.endsWith("/turn-retry")) {
+      expect(options.data).toEqual({ turnId: 210, mode: "platform" });
+      const running: Turn = {
+        ...fallback,
+        id: 211,
+        retryOfTurnId: 210,
+        status: "running",
+        aJoker: null,
+        error: null,
+        artifacts: undefined,
+        specialist: undefined,
+        imageGeneration: { status: "pending", canResume: false },
+      };
+      history = [fallback, running];
+      return runningGate;
+    }
+    return originalRequest(options);
+  });
+
+  await mount();
+  let retrying!: Promise<void>;
+  await act(async () => {
+    retrying = renderer!.root.findAllByType("button")
+      .find((button) => button.props["aria-label"] === "重试这一轮")!
+      .props.onClick();
+    await Promise.resolve();
+  });
+
+  expect(text()).toContain("旧的阿 J 兜底回复");
+  expect(text()).toContain("且动一下手");
+  expect(text().match(/请专家帮我梳理/g)).toHaveLength(1);
+  expect(
+    renderer!.root.findAll((node) => node.props.className === "dancing-loader"),
+  ).toHaveLength(1);
+
+  await act(async () => {
+    releaseRunning({ statusCode: 200, data: history[1] });
+    await retrying;
+  });
+
+  expect(text()).toContain("旧的阿 J 兜底回复");
+  expect(text()).toContain("且动一下手");
+  expect(text().match(/请专家帮我梳理/g)).toHaveLength(1);
+  expect(
+    renderer!.root.findAll((node) => node.props.className === "dancing-loader"),
+  ).toHaveLength(1);
+
+  act(() => renderer?.unmount());
+  renderer = undefined;
+  const failed: Turn = {
+    ...history[1],
+    status: "failed",
+    error: "专家重试失败",
+    imageGeneration: undefined,
+  };
+  history = [fallback, failed];
+  await mount();
+
+  expect(text()).toContain("旧的阿 J 兜底回复");
+  expect(text()).toContain("且动一下手");
+  expect(text()).toContain("专家重试失败");
+  expect(text().match(/请专家帮我梳理/g)).toHaveLength(1);
+  const actionable = renderer!.root.findAllByType("button")
+    .filter((button) => button.props["aria-label"] === "重试这一轮");
+  expect(actionable).toHaveLength(1);
+
+  platform.request.mockImplementation(async (options: { url: string; data?: unknown }) => {
+    if (options.url.endsWith("/turn-retry")) {
+      expect(options.data).toEqual({ turnId: 211, mode: "platform" });
+      const successful: Turn = {
+        ...fallback,
+        id: 212,
+        retryOfTurnId: 211,
+        aJoker: "最新专家回复",
+        artifacts: [artifacts.find((item) => item.kind === "table")!],
+        specialist: {
+          ...fallback.specialist!,
+          status: "completed",
+          handoff: {
+            schemaVersion: 1,
+            status: "completed",
+            attempts: 1,
+            finalDisposition: "completed",
+            diagnostics: [],
+          },
+        },
+      };
+      history = [fallback, failed, successful];
+      return { statusCode: 200, data: successful };
+    }
+    return originalRequest(options);
+  });
+  await act(async () => {
+    await actionable[0].props.onClick();
+  });
+
+  expect(text()).toContain("最新专家回复");
+  expect(text()).toContain("三日小计划");
+  expect(text()).not.toContain("旧的阿 J 兜底回复");
+  expect(text()).not.toContain("且动一下手");
+  expect(text()).not.toContain("专家重试失败");
+  expect(text().match(/请专家帮我梳理/g)).toHaveLength(1);
+  expect(
+    renderer!.root.findAllByType("button").filter(
+      (button) => button.props["aria-label"] === "重试这一轮",
+    ),
+  ).toHaveLength(0);
+});
+
 const text = () => JSON.stringify(renderer?.toJSON());
 
 it.each(["missing-sensitive", "updated-policy"])("图片授权不足时带上传原因进入设置：%s", async (reason) => {

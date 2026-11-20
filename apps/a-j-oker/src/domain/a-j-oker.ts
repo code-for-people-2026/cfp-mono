@@ -1,12 +1,12 @@
 import { CREATION_REFUSAL } from "./creation-scope";
 import { z } from "zod";
-import { createHash } from "node:crypto";
 import { SERVICE_SCOPE_REFUSAL, SERVICE_SCOPE_CLARIFICATION, SERVICE_SCOPE_VERSION } from "./service-scope";
 import { INTERACTION_VERSION } from "../interaction/policy";
 import { InteractionService } from "../interaction/service";
 import {
   AJ_PRESENTATION_REVISION,
   ajPresentationId,
+  imageGenerationBlocksRetry,
   type Session,
 } from "@cfp/a-j-oker-contracts";
 import type { AJoker as AJokerRecord } from "../payload-types";
@@ -60,6 +60,9 @@ import { ImageGenerationService, canResumeImage, readImageState } from "../image
 import { configuredImageProvider, type ImageProvider } from "../images/wan";
 import { activeSpecialistFromTurns, specialistActionMatches, specialistStateSchema, type SpecialistState } from "../agent/specialist-state";
 import { publicAJokerState } from "./public-a-j-oker";
+import { retryLineages, retryRequestId } from "./retry-lineage";
+
+export { retryRequestId } from "./retry-lineage";
 
 // 外部 MCP 路径只保存产物，不加载或启动平台的 Agent 运行时。
 const platformGenerator: Generator = async (request) => {
@@ -87,24 +90,6 @@ function formatFormValue(field: Field, value: FormValue | undefined) {
     .map((option) => option.label);
   if (value.otherText !== undefined) labels.push(`补充：${value.otherText}`);
   return labels.join("、") || "（未填写）";
-}
-
-export function retryRequestId(owner: string, turnId: number) {
-  const digest = createHash("sha256")
-    .update(`${owner}:turn-retry:${turnId}`)
-    .digest("hex");
-  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
-}
-
-function retryLineage(
-  owner: string,
-  row: Pick<AJokerRecord, "requestKey">,
-  rows: Pick<AJokerRecord, "id">[],
-) {
-  const original = rows.find((candidate) =>
-    row.requestKey === `${owner}:${retryRequestId(owner, candidate.id)}`
-  );
-  return original ? { retryOfTurnId: original.id } : {};
 }
 
 export class AJokerService {
@@ -144,9 +129,10 @@ export class AJokerService {
   async history(sessionId: number) {
     await this.repo.get("sessions", sessionId);
     const rows = await this.repo.all("a-j-oker", { sessionId: { equals: sessionId } });
-    return rows.map((row) => publicAJokerState({
+    const lineages = retryLineages(this.repo.owner.id, rows);
+    return rows.map((row, index) => publicAJokerState({
       ...row,
-      ...retryLineage(this.repo.owner.id, row, rows),
+      ...lineages[index],
     }));
   }
   async submission(sessionId: number, requestId: string) {
@@ -168,6 +154,11 @@ export class AJokerService {
       throw new AppError(409, "这类操作不能重复执行，请刷新确认当前状态");
     if (exhaustedHandoff && (original.input as Inspiration).formResponse)
       throw new AppError(409, "已完成提交的表单不会自动重放，请从最新回复继续");
+    if (imageGenerationBlocksRetry(original.imageGeneration))
+      throw new AppError(
+        409,
+        "这轮图片已提交、生成中或已保存，整轮重试可能重复扣费；请返回该轮使用继续取图，若不能恢复或提交结果未确认，请联系管理员核对",
+      );
     const requestId = retryRequestId(this.repo.owner.id, turnId);
     const result = await this.generateAJoker({
       sessionId: Number(original.sessionId),

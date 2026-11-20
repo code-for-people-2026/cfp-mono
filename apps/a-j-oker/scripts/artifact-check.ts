@@ -131,10 +131,22 @@ try {
     "submit_psychology_plan",
   ]);
   const executionSessions = await repo.list("adk-sessions");
+  const expectedSpecialistSessionId = `${saved.id}:cbt:attempt-1`;
   const specialistSession = executionSessions.find(
-    (row) => row.snapshot.id === `${saved.id}:cbt`,
+    (row) => row.snapshot.id === expectedSpecialistSessionId,
   );
   assert.ok(specialistSession, "心理 subagent 的独立执行会话写入 Payload");
+  const safetyKnowledgeEvidence =
+    specialistSession.snapshot.state.safetyKnowledgeEvidence;
+  assert.ok(
+    safetyKnowledgeEvidence &&
+      typeof safetyKnowledgeEvidence === "object" &&
+      "approach" in safetyKnowledgeEvidence,
+  );
+  assert.equal(
+    safetyKnowledgeEvidence.approach,
+    "cbt",
+  );
   assert.ok(
     specialistSession.snapshot.events.some(
       (event) => event.author === "cbt_agent",

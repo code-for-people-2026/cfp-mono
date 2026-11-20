@@ -1,12 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Repository } from "../cms/repository";
 import type { AJoker as AJokerRecord } from "../payload-types";
+import { imageGenerationBlocksRetry } from "@cfp/a-j-oker-contracts";
 import { AJokerService, retryRequestId } from "./a-j-oker";
 
 const owner = "retry-owner";
 const input = { text: "请保留原问题", mediaIds: [7] };
 
-function row(id: number, overrides: Record<string, unknown> = {}) {
+function row(
+  id: number,
+  overrides: Partial<AJokerRecord> = {},
+): AJokerRecord {
   return {
     id,
     owner,
@@ -24,7 +28,7 @@ function row(id: number, overrides: Record<string, unknown> = {}) {
   };
 }
 
-function serviceFor(rows: ReturnType<typeof row>[]) {
+function serviceFor(rows: AJokerRecord[]) {
   const repo = {
     owner: { id: owner },
     payload: {},
@@ -35,6 +39,24 @@ function serviceFor(rows: ReturnType<typeof row>[]) {
     all: vi.fn(async () => rows),
   } as unknown as Repository;
   return new AJokerService(repo);
+}
+
+function imageState(
+  status: NonNullable<AJokerRecord["imageGeneration"]>["status"],
+): NonNullable<AJokerRecord["imageGeneration"]> {
+  return {
+    input: {
+      prompt: "一张温暖的手绘风格日常插画",
+      title: "日常插画",
+      alt: "温暖的手绘风格日常插画",
+      aspectRatio: "square",
+    },
+    model: "wan2.6-t2i",
+    status,
+    startedAt: "2026-11-19T00:00:00.000Z",
+    ...(status === "pending" ? { taskId: "image-task" } : {}),
+    ...(status === "stored" ? { mediaId: 8 } : {}),
+  };
 }
 
 describe("failed turn retry lineage", () => {
@@ -53,6 +75,8 @@ describe("failed turn retry lineage", () => {
         configurationRevision: "r1",
         theme: "blue",
         layout: "reflection",
+        allowedComponents: [],
+        preferredComponents: [],
         status: "completed",
         sources: [],
         prompt: "private specialist prompt",
@@ -117,12 +141,101 @@ describe("failed turn retry lineage", () => {
         formResponse: { turnId: 4, artifactId: "form", values: { answer: "done" } },
       },
       specialist: {
-        handoff: { status: "failed" },
+        taskId: "task-11",
+        expertId: "cbt",
+        name: "认知行为教练",
+        method: "认知行为方法",
+        configurationRevision: "r1",
+        theme: "blue",
+        layout: "reflection",
+        allowedComponents: [],
+        preferredComponents: [],
+        status: "unavailable",
+        sources: [],
+        prompt: "private specialist prompt",
+        currentTask: "private current task",
+        handoff: {
+          schemaVersion: 1,
+          status: "failed",
+          attempts: 3,
+          finalDisposition: "retry_exhausted",
+          diagnostics: [],
+        },
       },
     });
     const service = serviceFor([completedForm]);
     const generate = vi.spyOn(service, "generateAJoker");
     await expect(service.retryFailed(11)).rejects.toMatchObject({ status: 409 });
     expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("recognizes image states that generic retry must not resubmit", () => {
+    expect(imageGenerationBlocksRetry(imageState("submitting"))).toBe(true);
+    expect(imageGenerationBlocksRetry(imageState("pending"))).toBe(true);
+    expect(imageGenerationBlocksRetry(imageState("stored"))).toBe(true);
+  });
+
+  it.each(["submitting", "pending", "stored"] as const)(
+    "does not call generation when retrying a turn with a %s image",
+    async (status) => {
+      const original = row(12, { imageGeneration: imageState(status) });
+      const service = serviceFor([original]);
+      const generate = vi.spyOn(service, "generateAJoker");
+
+      await expect(service.retryFailed(12)).rejects.toMatchObject({
+        status: 409,
+        message: expect.stringContaining("继续取图"),
+      });
+      expect(generate).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([undefined, "failed", "blocked"] as const)(
+    "still retries a nonimage or terminal-image failure with state %s",
+    async (status) => {
+      const original = row(13, {
+        ...(status === undefined
+          ? {}
+          : { imageGeneration: { ...imageState("failed"), status } }),
+      });
+      const replacement = row(14, {
+        status: "completed",
+        aJoker: "终态图片后的新回应",
+      });
+      const service = serviceFor([original, replacement]);
+      const generate = vi
+        .spyOn(service, "generateAJoker")
+        .mockResolvedValue(replacement);
+
+      await expect(service.retryFailed(13)).resolves.toMatchObject({
+        id: 14,
+        retryOfTurnId: 13,
+      });
+      expect(generate).toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: retryRequestId(owner, 13) }),
+      );
+    },
+  );
+
+  it("keeps image recovery on the persisted image request rather than generic retry", async () => {
+    const original = row(15, {
+      requestKey: `${owner}:image-request`,
+      imageGeneration: {
+        ...imageState("pending"),
+        startedAt: new Date().toISOString(),
+      },
+    });
+    const service = serviceFor([original]);
+    const generate = vi
+      .spyOn(service, "generateAJoker")
+      .mockResolvedValue(original);
+
+    await service.resumeImage(15);
+
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({ requestId: "image-request" }),
+      undefined,
+      15,
+    );
   });
 });

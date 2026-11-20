@@ -4,6 +4,7 @@ import type {
   ModelContext,
   AdTicket,
 } from "@cfp/a-j-oker-contracts";
+import { supersededRetryTurnIds } from "@cfp/a-j-oker-contracts";
 import { SUMMARY_PROMPT_VERSION } from "../agent/summary-instruction";
 import { summarizeContext, type Summarizer } from "../agent/summarize";
 import { AppError } from "./contracts";
@@ -25,6 +26,7 @@ import {
   finishReward,
   previewRecoveryEnabled,
 } from "./rewarded-ads";
+import { retryLineages } from "./retry-lineage";
 
 export class ContextService {
   constructor(
@@ -36,15 +38,23 @@ export class ContextService {
   private async read(sessionId: number) {
     const row = await this.repo.get("sessions", sessionId);
     const memory = memorySchema.parse(row.memory || {});
-    const turns = (
-      await this.repo.all("a-j-oker", {
+    const rows = await this.repo.all("a-j-oker", {
         and: [
           { sessionId: { equals: sessionId } },
-          { status: { equals: "completed" } },
           { id: { greater_than: memory.throughId } },
         ],
-      })
-    ).filter((row) => row.status === "completed").map(toMemoryTurn);
+      });
+    const lineages = retryLineages(this.repo.owner.id, rows);
+    const superseded = supersededRetryTurnIds(
+      rows.map((row, index) => ({
+        id: row.id,
+        status: row.status,
+        ...lineages[index],
+      })),
+    );
+    const turns = rows
+      .filter((row) => row.status === "completed" && !superseded.has(row.id))
+      .map(toMemoryTurn);
     return { memory, turns };
   }
   private save(sessionId: number, memory: Memory) {

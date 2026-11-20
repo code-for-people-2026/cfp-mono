@@ -1,4 +1,4 @@
-import { evidenceFromSnapshot } from "./knowledge-evidence";
+import { evidenceFromSnapshot, expertSessionApproach } from "./knowledge-evidence";
 import { randomUUID } from "node:crypto";
 import {
   BaseSessionService,
@@ -95,7 +95,8 @@ export class PayloadSessionService extends BaseSessionService {
     if (event.partial) return event;
     request.session.lastUpdateTime = Date.now() / 1000;
     const snapshot = structuredClone(request.session);
-    if (snapshot.id.includes(":")) snapshot.state.safetyKnowledgeEvidence = evidenceFromSnapshot(snapshot.id.split(":").at(-1)!, snapshot);
+    const approach = expertSessionApproach(snapshot.id);
+    if (approach) snapshot.state.safetyKnowledgeEvidence = evidenceFromSnapshot(approach, snapshot);
     // 事件可审阅，但不重复保存图片字节，也不保存模型隐藏思考内容。
     for (const item of snapshot.events) {
       if (item.errorMessage)

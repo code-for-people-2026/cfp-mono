@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { evidenceFromSnapshot } from "./knowledge-evidence";
+import type { Payload } from "payload";
+import { evidenceFromSnapshot, readTurnKnowledge } from "./knowledge-evidence";
 const source = {
   library: "CBT 资料",
   title: "思维记录",
@@ -137,5 +138,79 @@ describe("逐轮知识依据", () => {
     });
     expect(result.sources).toEqual([]);
     expect(result.notices[0]).toContain("没有绑定");
+  });
+  it("管理员读取同一方法的重试时只返回最新依据", async () => {
+    const snapshotFor = (query: string, referenceId: string) => ({
+      events: [
+        {
+          content: {
+            role: "user",
+            parts: [
+              {
+                text: JSON.stringify({
+                  coordinatorRequest: "帮助",
+                  configurationRevision: "1",
+                  knowledgeContext: {
+                    query,
+                    sources: [{ ...source, referenceId }],
+                    notices: [],
+                  },
+                }),
+              },
+            ],
+          },
+        },
+      ],
+    });
+    const payload = {
+      findByID: async () => ({ id: 459, owner: "owner-1" }),
+      find: async () => ({
+        docs: [
+          {
+            key: "hello_agent:owner-1:459:cbt:attempt-2",
+            snapshot: snapshotFor("最新一次", "newest_ref"),
+          },
+          {
+            key: "hello_agent:owner-1:459:cbt:attempt-1",
+            snapshot: { events: [] },
+          },
+          { key: "hello_agent:owner-1:459:cbt", snapshot: { events: [] } },
+          {
+            key: "hello_agent:owner-1:459:act",
+            snapshot: snapshotFor("行为激活", "act_ref"),
+          },
+          {
+            key: "hello_agent:owner-1:459:4d3d7c21-83a4-4dbc-91f7-64e94e1e37a1:dbt:attempt-1",
+            snapshot: snapshotFor("情绪调节", "dbt_ref"),
+          },
+          {
+            key: "hello_agent:owner-1:999:cbt:attempt-1",
+            snapshot: { events: [] },
+          },
+        ],
+      }),
+    } as unknown as Payload;
+    const result = await readTurnKnowledge(payload, 459);
+    expect(result.map((evidence) => evidence.approach)).toEqual([
+      "cbt",
+      "act",
+      "dbt",
+    ]);
+    expect(result[0]).toMatchObject({
+      approach: "cbt",
+      label: "认知行为",
+      query: "最新一次",
+      sources: [{ referenceId: "newest_ref", cited: false }],
+    });
+    expect(result[1]).toMatchObject({
+      approach: "act",
+      query: "行为激活",
+      sources: [{ referenceId: "act_ref", cited: false }],
+    });
+    expect(result[2]).toMatchObject({
+      approach: "dbt",
+      query: "情绪调节",
+      sources: [{ referenceId: "dbt_ref", cited: false }],
+    });
   });
 });

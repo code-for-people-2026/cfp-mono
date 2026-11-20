@@ -1,5 +1,9 @@
 import { InteractionGuard } from "../../chat/interaction";
-import type { UserProfile } from "@cfp/a-j-oker-contracts";
+import {
+  imageGenerationBlocksRetry,
+  supersededRetryTurnIds,
+  type UserProfile,
+} from "@cfp/a-j-oker-contracts";
 import { AgeGate } from "../../chat/age";
 import type { AgeStatus } from "@cfp/a-j-oker-contracts";
 import { installAiCopyLabels } from "../../chat/ai-copy";
@@ -23,6 +27,7 @@ import { ChatDock } from "../../chat/dock";
 import { Artifacts, LiveArtifacts } from "../../chat/artifacts";
 import { EvidenceCard } from "../../chat/evidence-card";
 import { DancingLoader } from "../../chat/dancing-loader";
+import { retryUserMessageVisible } from "../../chat/retry-history";
 import { resolveExpertAvatarSource } from "../../chat/expert-avatars";
 import { LoadingCarousel } from "../../chat/loading-carousel";
 import {
@@ -105,11 +110,7 @@ const suggestions = [
 ];
 
 export function visibleRetryLineage(rows: Turn[]) {
-  const superseded = new Set(
-    rows.flatMap((row) =>
-      row.retryOfTurnId === undefined ? [] : [row.retryOfTurnId],
-    ),
-  );
+  const superseded = supersededRetryTurnIds(rows);
   return rows.filter((row) => !superseded.has(row.id));
 }
 
@@ -809,7 +810,9 @@ export default function Chat() {
     formSubmissionStates(history);
   const activeSpecialist = activeSpecialistTurn(history);
   const interimPreamble = interimHandoffPreamble(history, progress);
+  const historyById = new Map(history.map((row) => [row.id, row]));
   const visibleHistory = visibleRetryLineage(history);
+  const visibleHistoryIds = new Set(visibleHistory.map((row) => row.id));
   const pendingAssistantMessage = (
     <View className="message assistant-message">
       <View className="message-main">
@@ -888,6 +891,7 @@ export default function Chat() {
       row.mode !== "platform" ||
       row.input.action ||
       (exhaustedHandoff && !!row.input.formResponse) ||
+      imageGenerationBlocksRetry(row.imageGeneration) ||
       activeSession.current !== sessionId
     ) return;
     const version = scopeVersion.current;
@@ -1044,7 +1048,8 @@ export default function Chat() {
             )}
             {visibleHistory.map((row) => (
               <View className="turn" key={row.id}>
-                {!isFormOnlyInput(row.input) && (
+                {!isFormOnlyInput(row.input) &&
+                  retryUserMessageVisible(row, historyById, visibleHistoryIds) && (
                   <View className="message user-message">
                     <View className="user-message-main">
                       <View className="bubble user-bubble">
@@ -1091,7 +1096,9 @@ export default function Chat() {
                     </View>
                   </View>
                 )}
-                {retryingTurnId === row.id ? (
+                {row.status === "running" && row.retryOfTurnId !== undefined ? (
+                  pendingAssistantMessage
+                ) : retryingTurnId === row.id && row.status === "failed" ? (
                   pendingAssistantMessage
                 ) : (
                   <>
@@ -1201,6 +1208,8 @@ export default function Chat() {
                           (row.status === "completed" && row.specialist?.handoff?.status === "failed" && !row.input.formResponse)) &&
                           row.mode === "platform" &&
                           !row.input.action &&
+                          !imageGenerationBlocksRetry(row.imageGeneration) &&
+                          retryingTurnId !== row.id &&
                           !history.some((candidate) =>
                             candidate.retryOfTurnId === row.id
                           ) && (
@@ -1241,6 +1250,13 @@ export default function Chat() {
                 </View>
                   </>
                 )}
+                {retryingTurnId === row.id &&
+                  row.status === "completed" &&
+                  !history.some((candidate) =>
+                    candidate.retryOfTurnId === row.id
+                  )
+                  ? pendingAssistantMessage
+                  : null}
               </View>
             ))}
             {pending && (
