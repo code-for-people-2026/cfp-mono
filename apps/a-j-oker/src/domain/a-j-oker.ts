@@ -6,6 +6,7 @@ import { InteractionService } from "../interaction/service";
 import {
   AJ_PRESENTATION_REVISION,
   ajPresentationId,
+  imageGenerationBlocksRetry,
   type Session,
 } from "@cfp/a-j-oker-contracts";
 import type { AJoker as AJokerRecord } from "../payload-types";
@@ -59,6 +60,9 @@ import { ImageGenerationService, canResumeImage, readImageState } from "../image
 import { configuredImageProvider, type ImageProvider } from "../images/wan";
 import { activeSpecialistFromTurns, specialistActionMatches, specialistStateSchema, type SpecialistState } from "../agent/specialist-state";
 import { publicAJokerState } from "./public-a-j-oker";
+import { retryLineages, retryRequestId } from "./retry-lineage";
+
+export { retryRequestId } from "./retry-lineage";
 
 // 外部 MCP 路径只保存产物，不加载或启动平台的 Agent 运行时。
 const platformGenerator: Generator = async (request) => {
@@ -124,7 +128,12 @@ export class AJokerService {
   }
   async history(sessionId: number) {
     await this.repo.get("sessions", sessionId);
-    return (await this.repo.all("a-j-oker", { sessionId: { equals: sessionId } })).map(publicAJokerState);
+    const rows = await this.repo.all("a-j-oker", { sessionId: { equals: sessionId } });
+    const lineages = retryLineages(this.repo.owner.id, rows);
+    return rows.map((row, index) => publicAJokerState({
+      ...row,
+      ...lineages[index],
+    }));
   }
   async submission(sessionId: number, requestId: string) {
     await this.repo.get("sessions", sessionId);
@@ -132,6 +141,33 @@ export class AJokerService {
       and: [{ sessionId: { equals: sessionId } }, { requestKey: { equals: `${this.repo.owner.id}:${requestId}` } }],
     }, 1);
     return { turn: rows[0] ? publicAJokerState(rows[0]) : null };
+  }
+  async retryFailed(turnId: number, apiKey?: string) {
+    const original = await this.repo.get("a-j-oker", turnId);
+    const exhaustedHandoff = original.status === "completed" &&
+      original.specialist?.handoff?.status === "failed";
+    if (original.status !== "failed" && !exhaustedHandoff)
+      throw new AppError(409, "只能重试已确认失败的回合或未完成的专家交接");
+    if (original.mode !== "platform")
+      throw new AppError(409, "当前仅支持重试平台模式的失败回合");
+    if ((original.input as Inspiration).action)
+      throw new AppError(409, "这类操作不能重复执行，请刷新确认当前状态");
+    if (exhaustedHandoff && (original.input as Inspiration).formResponse)
+      throw new AppError(409, "已完成提交的表单不会自动重放，请从最新回复继续");
+    if (imageGenerationBlocksRetry(original.imageGeneration))
+      throw new AppError(
+        409,
+        "这轮图片已提交、生成中或已保存，整轮重试可能重复扣费；请返回该轮使用继续取图，若不能恢复或提交结果未确认，请联系管理员核对",
+      );
+    const requestId = retryRequestId(this.repo.owner.id, turnId);
+    const result = await this.generateAJoker({
+      sessionId: Number(original.sessionId),
+      requestId,
+      input: structuredClone(original.input),
+      mode: "platform",
+      apiKey,
+    });
+    return publicAJokerState({ ...result, retryOfTurnId: turnId });
   }
   async upload(data: Uint8Array) {
     if (data.length > 5 * 1024 * 1024)

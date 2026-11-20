@@ -12,6 +12,8 @@ import {
   type ServerCallContext,
   type Task,
 } from "@cfp/agent-a2a";
+import { DeepSeekError } from "../models/deepseek";
+import type { PsychologyConsultation } from "./psychology-plan";
 
 import {
   AJ_A2A_TENANT,
@@ -44,6 +46,10 @@ class BridgeTaskStore implements ScopedA2ATaskStore {
   async list(params: ListTasksRequest, context: ServerCallContext): Promise<ListTasksResponse> {
     const tasks = [...this.scope(context).values()];
     return { tasks: structuredClone(tasks), nextPageToken: "", pageSize: params.pageSize ?? 50, totalSize: tasks.length };
+  }
+
+  snapshot(): Task[] {
+    return structuredClone([...this.values.values()].flatMap((tasks) => [...tasks.values()]));
   }
 }
 
@@ -148,9 +154,9 @@ describe("AJ 心理咨询标准 A2A 桥", () => {
       requestLedger,
     })([{ approach: "cbt", label: "认知行为", revision: "r1", execute }]);
     const first = await create().consult({ parentExecutionId: "turn-1", approach: "cbt", consultation, signal: new AbortController().signal });
-    expect(first).toEqual({ status: "completed", plan: result });
+    expect(first).toMatchObject({ status: "completed", plan: result });
     const recovered = await create().consult({ parentExecutionId: "turn-1", approach: "cbt", consultation, signal: new AbortController().signal });
-    expect(recovered).toEqual(first);
+    expect(recovered).toMatchObject({ status: "completed", plan: result });
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
@@ -179,9 +185,122 @@ describe("AJ 心理咨询标准 A2A 桥", () => {
       approach: "cbt",
       consultation,
       signal: new AbortController().signal,
-    })).resolves.toEqual({ status: "completed", plan: result });
+    })).resolves.toMatchObject({ status: "completed", plan: result });
     expect(messageSends).toBe(2);
     expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it("首次专家执行可恢复失败时在同一持久任务内重试并只提交一个方案", async () => {
+    const taskStore = new BridgeTaskStore();
+    const requestLedger = new BridgeLedger();
+    const originalConsultation = {
+      ...consultation,
+      knowledgeQuery: "cbt",
+      userFacingIntro: "我先把这件事交给对应的 AI 专家，请稍等。",
+    };
+    const received: { input: PsychologyConsultation; attempt?: number }[] = [];
+    const diagnostics = vi.fn();
+    let attempts = 0;
+    const runtime = createInProcessPsychologyA2AFactory({
+      principal: { owner: "alice", tenant: AJ_A2A_TENANT },
+      taskStore,
+      requestLedger,
+      executionDiagnostics: diagnostics,
+    })([{
+      approach: "cbt",
+      label: "认知行为",
+      revision: "r1",
+      execute: async (input, _signal, context) => {
+        received.push({ input, attempt: context?.attempt });
+        if (++attempts === 1) {
+          throw new DeepSeekError("secret prompt and key should not persist", "http", 503);
+        }
+        return result;
+      },
+    }]);
+
+    await expect(runtime.consult({
+      parentExecutionId: "expert-retry-turn",
+      approach: "cbt",
+      consultation: originalConsultation,
+      signal: new AbortController().signal,
+    })).resolves.toMatchObject({ status: "completed", plan: result });
+
+    expect(attempts).toBe(2);
+    expect(received.map((item) => structuredClone(item.input))).toEqual([
+      originalConsultation,
+      originalConsultation,
+    ]);
+    expect(received.map((item) => item.attempt)).toEqual([1, 2]);
+    const tasks = taskStore.snapshot();
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]).toMatchObject({ status: { state: 3 }, artifacts: [{ artifactId: "psychology-plan" }] });
+    expect(tasks[0]?.artifacts).toHaveLength(1);
+    expect(diagnostics).toHaveBeenCalled();
+    expect(JSON.stringify(diagnostics.mock.calls)).not.toContain("secret prompt");
+    expect(JSON.stringify(diagnostics.mock.calls)).not.toContain("key");
+  });
+
+  it("专家执行重试有固定上限且耗尽后保持单个失败任务", async () => {
+    const taskStore = new BridgeTaskStore();
+    const requestLedger = new BridgeLedger();
+    const diagnostics = vi.fn();
+    const execute = vi.fn(async () => {
+      throw new DeepSeekError("transient provider body", "http", 503);
+    });
+    const runtime = createInProcessPsychologyA2AFactory({
+      principal: { owner: "alice", tenant: AJ_A2A_TENANT },
+      taskStore,
+      requestLedger,
+      executionDiagnostics: diagnostics,
+    })([{ approach: "cbt", label: "认知行为", revision: "r1", execute }]);
+
+    await expect(runtime.consult({
+      parentExecutionId: "expert-retry-exhausted-turn",
+      approach: "cbt",
+      consultation,
+      signal: new AbortController().signal,
+    })).resolves.toMatchObject({ status: "unavailable" });
+
+    expect(execute).toHaveBeenCalledTimes(3);
+    expect(taskStore.snapshot()).toHaveLength(1);
+    expect(taskStore.snapshot()[0]).toMatchObject({
+      status: { state: 4 },
+      artifacts: [],
+    });
+    expect(diagnostics).toHaveBeenLastCalledWith(expect.objectContaining({
+      category: "expert_retry_exhausted",
+      diagnostic: expect.objectContaining({ attempt: 3, disposition: "retry_exhausted" }),
+    }));
+  });
+
+  it("认证或策略类专家错误不重试", async () => {
+    const taskStore = new BridgeTaskStore();
+    const requestLedger = new BridgeLedger();
+    const diagnostics = vi.fn();
+    const execute = vi.fn(async () => {
+      throw new DeepSeekError("credential body", "credential");
+    });
+    const runtime = createInProcessPsychologyA2AFactory({
+      principal: { owner: "alice", tenant: AJ_A2A_TENANT },
+      taskStore,
+      requestLedger,
+      executionDiagnostics: diagnostics,
+    })([{ approach: "cbt", label: "认知行为", revision: "r1", execute }]);
+
+    await expect(runtime.consult({
+      parentExecutionId: "expert-auth-failed-turn",
+      approach: "cbt",
+      consultation,
+      signal: new AbortController().signal,
+    })).resolves.toMatchObject({ status: "unavailable" });
+
+    expect(execute).toHaveBeenCalledOnce();
+    expect(taskStore.snapshot()[0]).toMatchObject({ status: { state: 4 } });
+    expect(diagnostics).toHaveBeenLastCalledWith(expect.objectContaining({
+      category: "expert_nonretryable",
+      diagnostic: expect.objectContaining({ attempt: 1, disposition: "nonretryable" }),
+    }));
   });
 
   it("任务已持久提交但响应丢失时恢复完成任务，不重发也不重新执行", async () => {
@@ -211,7 +330,7 @@ describe("AJ 心理咨询标准 A2A 桥", () => {
       approach: "cbt",
       consultation,
       signal: new AbortController().signal,
-    })).resolves.toEqual({ status: "completed", plan: result });
+    })).resolves.toMatchObject({ status: "completed", plan: result });
     expect(messageSends).toBe(1);
     expect(execute).toHaveBeenCalledOnce();
   });
@@ -231,7 +350,7 @@ describe("AJ 心理咨询标准 A2A 桥", () => {
     const failed = createInProcessPsychologyA2AFactory({
       principal: { owner: "failed", tenant: AJ_A2A_TENANT }, taskStore, requestLedger,
     })([{ approach: "cbt", label: "认知行为", revision: "r1", execute: async () => { throw new Error("private detail"); } }]);
-    expect(await failed.consult({ parentExecutionId: "turn", approach: "cbt", consultation, signal: new AbortController().signal })).toEqual({ status: "unavailable" });
+    expect(await failed.consult({ parentExecutionId: "turn", approach: "cbt", consultation, signal: new AbortController().signal })).toMatchObject({ status: "unavailable" });
   });
 
   it("宿主完成结果恢复允许同一修订下重写咨询，但不跨身份或修订", async () => {
@@ -253,7 +372,7 @@ describe("AJ 心理咨询标准 A2A 桥", () => {
       consultation,
       signal: new AbortController().signal,
     });
-    expect(first).toEqual({ status: "completed", plan: result });
+    expect(first).toMatchObject({ status: "completed", plan: result });
     const recovered = await create().consult({
       parentExecutionId: "logical-turn",
       approach: "cbt",
@@ -278,7 +397,7 @@ describe("AJ 心理咨询标准 A2A 桥", () => {
       approach: "cbt",
       consultation,
       signal: new AbortController().signal,
-    })).resolves.toEqual({ status: "unavailable" });
+    })).resolves.toMatchObject({ status: "unavailable" });
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
@@ -312,7 +431,7 @@ describe("AJ 心理咨询标准 A2A 桥", () => {
       approach: "cbt",
       consultation: { ...consultation, request: "重写后的咨询" },
       signal: new AbortController().signal,
-    })).resolves.toEqual({ status: "unavailable" });
+    })).resolves.toMatchObject({ status: "unavailable" });
     expect(execute).toHaveBeenCalledOnce();
 
     controller.abort();
@@ -348,8 +467,8 @@ describe("AJ 心理咨询标准 A2A 桥", () => {
       signal: new AbortController().signal,
     });
     gate.resolve();
-    expect(await first).toEqual({ status: "completed", plan: result });
-    expect(await second).toEqual({ status: "completed", plan: result });
+    expect(await first).toMatchObject({ status: "completed", plan: result });
+    expect(await second).toMatchObject({ status: "completed", plan: result });
     expect(execute).toHaveBeenCalledOnce();
   });
 
@@ -410,7 +529,7 @@ describe("AJ 心理咨询标准 A2A 桥", () => {
       approach: "cbt",
       consultation,
       signal: new AbortController().signal,
-    })).resolves.toEqual({ status: "unavailable" });
+    })).resolves.toMatchObject({ status: "unavailable" });
     expect(execute).not.toHaveBeenCalled();
   });
 

@@ -282,7 +282,7 @@ export async function POST(request: Request, context: Context) {
       request,
       path[0] === "ag-ui" ? 64 * 1024 : undefined,
     );
-    if (["a-j-oker", "context", "image-resume"].includes(path[0])) requirePlatformInput(body);
+    if (["a-j-oker", "context", "image-resume", "turn-retry"].includes(path[0])) requirePlatformInput(body);
     return await withAuthenticatedExecution(payload, request, owner, async (owner) => {
       checkClientRequest(request, owner);
       const privacy = privacyService(payload, owner);
@@ -297,6 +297,21 @@ export async function POST(request: Request, context: Context) {
         // lease keeps revocation excluded until that work finishes or fails,
         // including when the client disconnects.
         return agentStream({ generateAJoker: (args, progress) => withCredentialExecution(owner.id, () => service.generateAJoker(args, progress)) }, input);
+      }
+      if (path[0] === "turn-retry" && path.length === 1) {
+        const retry = z.object({
+          turnId: z.number().int().positive(),
+          mode: z.literal("platform"),
+        }).strict().parse(body);
+        const row = await service.repo.get("a-j-oker", retry.turnId);
+        await privacy.requireInput(row.input);
+        const result = await withCredentialExecution(owner.id, () =>
+          service.retryFailed(retry.turnId)
+        );
+        const catalogId = ajCatalogIdForResponseHeader(
+          request.headers.get(AJ_PRESENTATION_CATALOG_HEADER),
+        );
+        return json(projectAjTurnForClient(publicAJokerState(result), catalogId));
       }
     if (path[0] === "image-resume" && path.length === 1) {
       const retry = z.object({ turnId: z.number().int().positive(), requestId: z.string().uuid(), apiKey: z.string().min(10).max(256).optional() }).strict().parse(body);

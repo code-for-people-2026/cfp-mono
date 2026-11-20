@@ -12,6 +12,8 @@ interface A2AFaultModes {
   failFirstSendBeforeExecution: boolean;
   failFirstModelAttempt: boolean;
   loseFirstResponseAfterCommit: boolean;
+  failFirstExpertExecution: boolean;
+  exhaustExpertExecutionRetries: boolean;
 }
 
 interface A2AFaultPolicy extends A2AFaultModes {
@@ -26,6 +28,8 @@ export const DISABLED_A2A_FAULTS: A2AFaultPolicy = {
   failFirstSendBeforeExecution: false,
   failFirstModelAttempt: false,
   loseFirstResponseAfterCommit: false,
+  failFirstExpertExecution: false,
+  exhaustExpertExecutionRetries: false,
 };
 
 type FaultFile = {
@@ -60,6 +64,8 @@ function parseFaultFile(value: string): FaultFile {
       failFirstSendBeforeExecution: bool(modeRecord.failFirstSendBeforeExecution),
       failFirstModelAttempt: bool(modeRecord.failFirstModelAttempt),
       loseFirstResponseAfterCommit: bool(modeRecord.loseFirstResponseAfterCommit),
+      failFirstExpertExecution: bool(modeRecord.failFirstExpertExecution),
+      exhaustExpertExecutionRetries: bool(modeRecord.exhaustExpertExecutionRetries),
     },
   };
 }
@@ -145,7 +151,9 @@ export async function loadA2AFaultPolicy(input: {
     enabled: modes.rejectFirstTwoExpertSubmissions
       || modes.failFirstSendBeforeExecution
       || modes.failFirstModelAttempt
-      || modes.loseFirstResponseAfterCommit,
+      || modes.loseFirstResponseAfterCommit
+      || modes.failFirstExpertExecution
+      || modes.exhaustExpertExecutionRetries,
     owner: parsed.owner,
     ...modes,
   };

@@ -25,6 +25,16 @@ export type KnowledgeEvidence = {
   notices: string[];
 };
 
+export function expertSessionApproach(id: string) {
+  const match =
+    /^\d+(?::[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})?:([a-z_]+)(?::attempt-[1-9]\d*)?$/.exec(
+      id,
+    );
+  return match && Object.hasOwn(PSYCHOLOGY_APPROACHES, match[1])
+    ? match[1]
+    : undefined;
+}
+
 export function evidenceFromSnapshot(
   approach: string,
   snapshot: unknown,
@@ -127,7 +137,6 @@ export async function readTurnKnowledge(payload: Payload, turnId: number) {
     id: turnId,
     depth: 0,
   });
-  const approaches = Object.keys(PSYCHOLOGY_APPROACHES);
   const prefix = `hello_agent:${turn.owner}:${turnId}:`;
   const rows = await payload.find({
     collection: "adk-sessions",
@@ -144,8 +153,10 @@ export async function readTurnKnowledge(payload: Payload, turnId: number) {
   const found = new Set<string>();
   return rows.docs.flatMap((row) => {
     if (!row.key.startsWith(prefix)) return [];
-    const approach = row.key.split(":").at(-1)!;
-    if (!approaches.includes(approach) || found.has(approach)) return [];
+    const approach = expertSessionApproach(
+      row.key.slice(`hello_agent:${turn.owner}:`.length),
+    );
+    if (!approach || found.has(approach)) return [];
     found.add(approach);
     return [evidenceFromSnapshot(approach, row.snapshot)];
   });

@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useId,
   useRef,
   useState,
   type ReactNode,
@@ -28,7 +29,10 @@ import {
 } from "@cfp/base-chat-protocol";
 import type { SurfaceModel } from "@a2ui/web_core/v0_9";
 import { useArtifactUi } from "./artifact-ui";
-import { useSheetFieldFocus } from "./bottom-sheet";
+import {
+  useHasSheetFieldFocus,
+  useSheetFieldFocus,
+} from "./bottom-sheet";
 
 export function ArtifactImage({
   url,
@@ -140,6 +144,16 @@ const ArtifactContext = createContext<{
   error: string;
   submit: (dispatch: Dispatch, action: SubmitAction) => Promise<void>;
 } | null>(null);
+
+export type InlineFormKeyboardContextValue = {
+  focus(id: string, height: number): void;
+  blur(id: string): void;
+  keyboardHeight(id: string, height: number): void;
+};
+
+export const InlineFormKeyboardContext = createContext<
+  InlineFormKeyboardContextValue | null
+>(null);
 
 function formValueSignature(value: FormValue): string {
   if (value && typeof value === "object") {
@@ -432,6 +446,31 @@ export function ArtifactComponent({
 }) {
   const context = useArtifactState();
   const focusField = useSheetFieldFocus();
+  const inSheet = useHasSheetFieldFocus();
+  const inlineKeyboardContext = useContext(InlineFormKeyboardContext);
+  const inlineKeyboard = inSheet ? null : inlineKeyboardContext;
+  const nativeInputId = `artifact_input_${useId().replace(/[^A-Za-z0-9_-]/g, "")}`;
+  const keyboardProps = inlineKeyboard
+    ? {
+        adjustPosition: false,
+        id: nativeInputId,
+        onFocus: (event: { detail?: { height?: number } }) =>
+          inlineKeyboard.focus(
+            nativeInputId,
+            event.detail?.height && Number.isFinite(event.detail.height)
+              ? Math.max(0, event.detail.height)
+              : 0,
+          ),
+        onBlur: () => inlineKeyboard.blur(nativeInputId),
+        onKeyboardHeightChange: (event: { detail?: { height?: number } }) =>
+          inlineKeyboard.keyboardHeight(
+            nativeInputId,
+            event.detail?.height && Number.isFinite(event.detail.height)
+              ? Math.max(0, event.detail.height)
+              : 0,
+          ),
+      }
+    : undefined;
   const {
     values,
     locked,
@@ -667,13 +706,18 @@ export function ArtifactComponent({
             )}
             {field.allowOther && (
               <Input
+                {...keyboardProps}
                 className="artifact-input artifact-other-input"
                 value={selection?.otherText ?? ""}
                 placeholder={labels.otherChoice}
                 maxlength={1200}
                 disabled={locked}
-                adjustPosition={false}
-                onFocus={() => focusField(`artifact_field_${fieldId}`)}
+                adjustPosition={!inSheet && !inlineKeyboard}
+                cursorSpacing={24}
+                onFocus={
+                  keyboardProps?.onFocus ??
+                  (() => focusField(`artifact_field_${fieldId}`))
+                }
                 onInput={(event: { detail: { value: string } }) =>
                   updateOther(event.detail.value)
                 }
@@ -706,19 +750,25 @@ export function ArtifactComponent({
           </MessageText>
           {field.type === "longText" ? (
             <Textarea
+              {...keyboardProps}
               className="artifact-input artifact-textarea"
               value={String(values[fieldId] ?? "")}
               placeholder={field.placeholder || "写下你愿意分享的部分"}
               maxlength={1200}
               disabled={locked}
-              adjustPosition={false}
-              onFocus={() => focusField(`artifact_field_${fieldId}`)}
+              adjustPosition={!inSheet && !inlineKeyboard}
+              cursorSpacing={24}
+              onFocus={
+                keyboardProps?.onFocus ??
+                (() => focusField(`artifact_field_${fieldId}`))
+              }
               onInput={(event: { detail: { value: string } }) =>
                 update(event.detail.value)
               }
             />
           ) : (
             <Input
+              {...keyboardProps}
               className="artifact-input"
               type={field.type === "number" ? "digit" : "text"}
               value={String(values[fieldId] ?? "")}
@@ -730,8 +780,12 @@ export function ArtifactComponent({
               }
               maxlength={1200}
               disabled={locked}
-              adjustPosition={false}
-              onFocus={() => focusField(`artifact_field_${fieldId}`)}
+              adjustPosition={!inSheet && !inlineKeyboard}
+              cursorSpacing={24}
+              onFocus={
+                keyboardProps?.onFocus ??
+                (() => focusField(`artifact_field_${fieldId}`))
+              }
               onInput={(event: { detail: { value: string } }) =>
                 update(event.detail.value)
               }

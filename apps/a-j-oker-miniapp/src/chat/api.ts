@@ -23,6 +23,7 @@ import {
   sessionsSchema,
   sessionSchema,
   historySchema,
+  turnResultSchema,
   submissionResultSchema,
   memoryStatusSchema,
   adTicketSchema,
@@ -170,7 +171,7 @@ async function request<T>(
     method,
     data,
     dataType,
-    timeout: path === "ag-ui" || path === "image-resume" ? 240_000 : 90_000,
+    timeout: path === "ag-ui" || path === "image-resume" || path === "turn-retry" ? 240_000 : 90_000,
     header: {
       "Content-Type": "application/json",
       ...(path.startsWith("sessions/") || path === "image-resume"
@@ -292,6 +293,13 @@ export const getSubmission = (sessionId: number, requestId: string) =>
   request(
     `sessions/${sessionId}/requests/${requestId}`,
     submissionResultSchema,
+  );
+export const retryTurn = (turnId: number) =>
+  request(
+    "turn-retry",
+    turnResultSchema,
+    "POST",
+    { turnId, mode: "platform" },
   );
 export const getMemory = (id: number) =>
   request(`context/${id}`, memoryStatusSchema);

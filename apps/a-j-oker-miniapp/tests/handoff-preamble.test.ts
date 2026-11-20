@@ -82,12 +82,18 @@ describe("expert handoff preamble presentation", () => {
       /\{row\.handoffPreamble && \([\s\S]*?<HandoffPreamble text=\{row\.handoffPreamble\} \/>[\s\S]*?\)\}\s*\{firstHandoff && \([\s\S]*?specialist-handoff-notice[\s\S]*?\)\}\s*<PresentationFrame/,
     );
     expect(page).toMatch(
-      /if \(!origin\) \{[\s\S]*?return row\.handoffPreamble[\s\S]*?: turnContent;[\s\S]*?\}\s*const firstHandoff = !history[\s\S]*?\.slice\(0, rowIndex\)[\s\S]*?\.some\(\(previous\) => specialistPresentationForTurn\(previous\)\?\.id === origin\.id\)/,
+      /if \(!origin\) \{[\s\S]*?return row\.handoffPreamble[\s\S]*?: turnContent;[\s\S]*?\}\s*const firstHandoff = !history\s*\.slice\(0, history\.findIndex\(\(item\) => item\.id === row\.id\)\)\s*\.some\(\(previous\) => specialistPresentationForTurn\(previous\)\?\.id === origin\.id\)/,
     );
     expect(page).toMatch(/busy && !pending[\s\S]*?<HandoffPreamble text=\{interimPreamble\.text\}/);
     const pendingStage = page.slice(page.indexOf("{pending && ("), page.indexOf("{busy && !pending"));
-    expect(pendingStage).toContain("<HandoffPreamble text={interimPreamble.text} />");
+    expect(pendingStage).toContain("{pendingAssistantMessage}");
+    const pendingAssistantMessageView = page.slice(
+      page.indexOf("const pendingAssistantMessage"),
+      page.indexOf("const returnToAj"),
+    );
+    expect(pendingAssistantMessageView).toContain("<HandoffPreamble text={interimPreamble.text} />");
     expect(pendingStage).not.toContain("specialist-handoff-notice");
+    expect(pendingAssistantMessageView).not.toContain("specialist-handoff-notice");
     expect(page).not.toContain("interimPreamble.text || progress.text");
   });
 });

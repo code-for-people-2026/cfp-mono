@@ -437,6 +437,15 @@ input {
 .failed-bubble {
   color: #9d7650;
 }
+.handoff-failure-notice {
+  margin: 8px 16px 2px 52px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f3f0e9;
+  color: #665f52;
+  font-size: 12px;
+  line-height: 1.5;
+}
 .loading-note {
   display: block;
   font-size: 12px;
@@ -459,6 +468,16 @@ input {
   z-index: 10;
   flex-shrink: 0;
   background: #f6f8f7;
+}
+.chat-dock.is-keyboard-overlay .composer-area {
+  padding-bottom: 7px;
+}
+.native-shell.is-form-keyboard-open .chat-dock {
+  visibility: hidden;
+  pointer-events: none;
+}
+.form-keyboard-space {
+  flex-shrink: 0;
 }
 .chat-icon { display: block; width: 25px; height: 25px; pointer-events: none; }
 .h5-shell .taro-textarea { resize: none; }
@@ -1032,6 +1051,15 @@ input {
 }
 .settings-section button[disabled] {
   opacity: 0.45;
+}
+.settings-build-label {
+  display: block;
+  margin-top: 14px;
+  color: #7b8a80;
+  font-size: 12px;
+  line-height: 1.8;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .artifact-preview-icon .chat-icon { width: 19px; height: 19px; }

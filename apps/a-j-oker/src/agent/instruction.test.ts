@@ -93,7 +93,8 @@ describe("阿 J 先生人设与提示词变更门槛", () => {
     expect(COORDINATOR_INSTRUCTION).not.toContain("每轮最多两种");
     expect(COORDINATOR_INSTRUCTION).not.toContain("再整合成一份回应");
     expect(COORDINATOR_INSTRUCTION).toContain("最多选择一个最合适的心理 subagent");
-    expect(COORDINATOR_INSTRUCTION).toContain(
+    expect(COORDINATOR_INSTRUCTION).toContain("结构化数据呈现");
+    expect(COORDINATOR_INSTRUCTION).not.toContain(
       "向用户明确说明与该专家的本轮交接未完成",
     );
     expect(DIRECT_EXPERT_HANDOFF_CONTRACT).toContain(
@@ -103,6 +104,9 @@ describe("阿 J 先生人设与提示词变更门槛", () => {
   it("当前版本锁定完整提示词；有意变更需更新版本和评测记录", () => {
     // 指纹只防无意修改，不能证明模型行为；真实表现另跑 eval 并人工评阅。
     const approved: Record<string, string> = {
+      // 2026-11-19：aj-v5.10 由宿主呈现结构化交接失败状态，协调回复
+      // 不再重复生成失败说明。
+      "aj-v5.10": "f21dcce0dc4e003611d797d776f5f8dfa3c4f9a6b10c169bb2b2f53465a5af5d",
       // 2026-11-18：aj-v5.9 将回复字段与保存工具协议改名为 aJoker /
       // save_a_j_oker；本次为命名清理，真实模型评阅待补。
       "aj-v5.9": "88c8a38e2fa9687178c4539c78dd35438f8c3f4341eb0f6cbb467dd125023e8a",

@@ -14,7 +14,9 @@ import {
   type Task,
   type TaskState,
   recoverA2ASendMessage,
+  retryA2AExecution,
 } from "@cfp/agent-a2a";
+import type { ExpertExecutionDiagnostic } from "@cfp/a-j-oker-contracts";
 
 import type { PsychologyApproach } from "./psychology";
 import {
@@ -23,6 +25,11 @@ import {
   type PsychologyConsultation,
   type PsychologyPlan,
 } from "./psychology-plan";
+import {
+  EXPERT_EXECUTION_MAX_ATTEMPTS,
+  classifyExpertExecutionError,
+  withDisposition,
+} from "./expert-execution";
 
 const AJ_A2A_BASE_URL = "https://aj-a2a.internal/";
 const AJ_A2A_TENANT = "aj-platform";
@@ -45,12 +52,17 @@ export type PsychologySpecialistBinding = {
   execute: (
     consultation: PsychologyConsultation,
     signal: AbortSignal,
+    context: {
+      attempt: number;
+      executionId: string;
+      taskId: string;
+    },
   ) => Promise<PsychologyPlan>;
 };
 
 type PsychologyA2AOutcome =
-  | { status: "completed"; plan: PsychologyPlan }
-  | { status: "unavailable" }
+  | { status: "completed"; plan: PsychologyPlan; diagnostics: ExpertExecutionDiagnostic[] }
+  | { status: "unavailable"; diagnostics: ExpertExecutionDiagnostic[] }
   | { status: "canceled" };
 
 export interface PsychologyA2ARuntime {
@@ -84,9 +96,20 @@ type PsychologyA2ATransportIntercept = (
 ) => Promise<Response>;
 
 type PsychologyA2ATelemetry = (event: {
-  category: "expert_execution" | "expert_completed";
+  category:
+    | "expert_execution"
+    | "expert_completed"
+    | "expert_retry_scheduled"
+    | "expert_retry_exhausted"
+    | "expert_nonretryable"
+    | "expert_canceled";
   attempt: number;
 }) => void;
+
+type PsychologyA2ADiagnosticEvent = {
+  category: string;
+  diagnostic: ExpertExecutionDiagnostic;
+};
 
 export type PsychologyA2AFactory = (
   bindings: PsychologySpecialistBinding[],
@@ -102,6 +125,7 @@ type PsychologyA2AFactoryOptions = {
   recoverCompletedTask?: PsychologyA2ACompletedTaskRecovery;
   transportIntercept?: PsychologyA2ATransportIntercept;
   expertTelemetry?: PsychologyA2ATelemetry;
+  executionDiagnostics?: (event: PsychologyA2ADiagnosticEvent) => void;
 };
 
 function endpointPath(approach: PsychologyApproach): string {
@@ -147,6 +171,26 @@ function planFromTask(task: Task, approach: PsychologyApproach): PsychologyPlan 
   return parsed.success && parsed.data.approach === approach
     ? parsed.data
     : undefined;
+}
+
+function completedDiagnosticsFromTask(
+  task: Task,
+  requestIdentity: string,
+  approach: PsychologyApproach,
+): ExpertExecutionDiagnostic[] {
+  const artifact = task.artifacts.find((item) => item.artifactId === "psychology-plan");
+  const attempt = Number((artifact?.metadata as Record<string, unknown> | undefined)?.attempt);
+  return [{
+    executionId: requestIdentity,
+    taskId: task.id,
+    expertId: approach,
+    attempt: Number.isInteger(attempt) && attempt >= 1 && attempt <= 3 ? attempt : 1,
+    phase: "terminal",
+    errorKind: "unknown",
+    errorName: "Error",
+    cause: "unknown",
+    disposition: "completed",
+  }];
 }
 
 function requestMatchesTask(
@@ -244,16 +288,36 @@ export function createInProcessPsychologyA2AFactory(
     if (bindings.length === 0) {
       return {
         async consult() {
-          return { status: "unavailable" } as const;
+          return { status: "unavailable", diagnostics: [] } as const;
         },
       };
     }
     const token = randomBytes(32).toString("base64url");
     const invocationSignals = new Map<string, AbortSignal>();
+    const diagnosticsByExecution = new Map<string, ExpertExecutionDiagnostic[]>();
     const bindingByApproach = new Map(bindings.map((binding) => [binding.approach, binding]));
     if (bindingByApproach.size !== bindings.length) {
       throw new Error("Duplicate AJ psychology A2A specialist binding");
     }
+    const recordDiagnostic = (diagnostic: ExpertExecutionDiagnostic) => {
+      const existing = diagnosticsByExecution.get(diagnostic.executionId) ?? [];
+      const next = [...existing, diagnostic].slice(-EXPERT_EXECUTION_MAX_ATTEMPTS);
+      diagnosticsByExecution.set(diagnostic.executionId, next);
+      options.executionDiagnostics?.({
+        category: diagnostic.disposition === "completed"
+          ? "expert_completed"
+          : diagnostic.disposition === "retry_scheduled"
+            ? "expert_retry_scheduled"
+            : diagnostic.disposition === "retry_exhausted"
+              ? "expert_retry_exhausted"
+              : diagnostic.disposition === "nonretryable"
+                ? "expert_nonretryable"
+                : diagnostic.disposition === "canceled"
+                  ? "expert_canceled"
+                  : "expert_unavailable",
+        diagnostic,
+      });
+    };
     const registry = new A2AAgentCardRegistry({
       schemaVersion: 1,
       publicBaseUrl: AJ_A2A_BASE_URL,
@@ -313,16 +377,63 @@ export function createInProcessPsychologyA2AFactory(
             input.contextId,
             TASK_STATE.WORKING,
           ));
+          let publishPhase: ExpertExecutionDiagnostic["phase"] = "execution";
           try {
             signal.throwIfAborted();
-            options.expertTelemetry?.({ category: "expert_execution", attempt: 1 });
-            const plan = psychologyPlanSchema.parse(
-              await binding.execute(parsed.data.consultation, signal),
-            );
+            const consultation = structuredClone(parsed.data.consultation);
+            const retry = await retryA2AExecution({
+              maxAttempts: EXPERT_EXECUTION_MAX_ATTEMPTS,
+              signal,
+              retryDelayMs: 20,
+              execute: async (attempt) => {
+                options.expertTelemetry?.({ category: "expert_execution", attempt });
+                const value = await binding.execute(
+                  structuredClone(consultation),
+                  signal,
+                  {
+                    attempt,
+                    executionId: input.message.messageId,
+                    taskId: input.taskId,
+                  },
+                );
+                const plan = psychologyPlanSchema.parse(value);
+                if (plan.approach !== binding.approach) {
+                  throw new Error("Psychology specialist returned another approach");
+                }
+                return plan;
+              },
+              classify: (error, attempt) => classifyExpertExecutionError({
+                error,
+                signal,
+                executionId: input.message.messageId,
+                taskId: input.taskId,
+                expertId: binding.approach,
+                attempt,
+              }),
+              onFailure: ({ disposition, attempt, diagnostic }) => {
+                recordDiagnostic(withDisposition(diagnostic, disposition));
+                if (disposition === "retry_scheduled") {
+                  options.expertTelemetry?.({ category: "expert_retry_scheduled", attempt });
+                } else if (disposition === "retry_exhausted") {
+                  options.expertTelemetry?.({ category: "expert_retry_exhausted", attempt });
+                } else if (disposition === "canceled") {
+                  options.expertTelemetry?.({ category: "expert_canceled", attempt });
+                } else {
+                  options.expertTelemetry?.({ category: "expert_nonretryable", attempt });
+                }
+              },
+            });
             signal.throwIfAborted();
-            if (plan.approach !== binding.approach) {
-              throw new Error("Psychology specialist returned another approach");
+            if (retry.status !== "completed") {
+              sink.publish(terminalUpdate(
+                input.taskId,
+                input.contextId,
+                retry.status === "canceled" ? TASK_STATE.CANCELED : TASK_STATE.FAILED,
+              ));
+              return;
             }
+            const plan = retry.value;
+            publishPhase = "artifact";
             sink.publish(AgentEvent.artifactUpdate({
               taskId: input.taskId,
               contextId: input.contextId,
@@ -336,20 +447,52 @@ export function createInProcessPsychologyA2AFactory(
                   filename: "",
                   metadata: { schemaVersion: 1 },
                 }],
-                metadata: { schemaVersion: 1, approach: binding.approach },
+                metadata: {
+                  schemaVersion: 1,
+                  approach: binding.approach,
+                  attempt: retry.attempt,
+                },
                 extensions: [],
               },
               append: false,
               lastChunk: true,
               metadata: {},
             }));
+            publishPhase = "terminal";
             sink.publish(terminalUpdate(
               input.taskId,
               input.contextId,
               TASK_STATE.COMPLETED,
             ));
-            options.expertTelemetry?.({ category: "expert_completed", attempt: 1 });
-          } catch {
+            recordDiagnostic({
+              executionId: input.message.messageId,
+              taskId: input.taskId,
+              expertId: binding.approach,
+              attempt: retry.attempt,
+              phase: "terminal",
+              errorKind: "unknown",
+              errorName: "Error",
+              cause: "unknown",
+              disposition: "completed",
+            });
+            options.expertTelemetry?.({ category: "expert_completed", attempt: retry.attempt });
+          } catch (error) {
+            const previous = diagnosticsByExecution.get(input.message.messageId) ?? [];
+            if (!signal.aborted && previous.at(-1)?.disposition === "completed") {
+              // Nothing to add: a completed terminal event cannot be retried.
+            } else if (!signal.aborted) {
+              recordDiagnostic(withDisposition(classifyExpertExecutionError({
+                error,
+                signal,
+                executionId: input.message.messageId,
+                taskId: input.taskId,
+                expertId: binding.approach,
+                attempt: Math.max(1, previous.at(-1)?.attempt ?? 1),
+                phase: publishPhase,
+              }).diagnostic, "nonretryable"));
+            }
+            // The durable executor and transport already sanitize host failures.
+            // This final guard only makes the task terminal; no raw error is persisted.
             sink.publish(terminalUpdate(
               input.taskId,
               input.contextId,
@@ -414,7 +557,9 @@ export function createInProcessPsychologyA2AFactory(
       async consult(input): Promise<PsychologyA2AOutcome> {
         const binding = bindingByApproach.get(input.approach);
         const client = clients.get(input.approach);
-        if (!binding || !client) return { status: "unavailable" };
+        if (!binding || !client) {
+          return { status: "unavailable", diagnostics: [] };
+        }
         const messageId = requestIdentity(
           input.parentExecutionId,
           input.approach,
@@ -457,6 +602,26 @@ export function createInProcessPsychologyA2AFactory(
           metadata: {},
         };
         const durableRecovery = options.recoverTask ?? options.recoverCompletedTask;
+        const unavailable = (
+          diagnostic?: Omit<ExpertExecutionDiagnostic, "disposition">,
+        ): { status: "unavailable"; diagnostics: ExpertExecutionDiagnostic[] } => {
+          if (!diagnostic) {
+            return {
+              status: "unavailable",
+              diagnostics: diagnosticsByExecution.get(messageId) ?? [],
+            };
+          }
+          const existing = diagnosticsByExecution.get(messageId) ?? [];
+          if (existing.some((item) => item.attempt === diagnostic.attempt && item.phase === diagnostic.phase)) {
+            return { status: "unavailable", diagnostics: existing };
+          }
+          const recorded = withDisposition(diagnostic, "recovery_unavailable");
+          recordDiagnostic(recorded);
+          return {
+            status: "unavailable",
+            diagnostics: [...existing, recorded].slice(-EXPERT_EXECUTION_MAX_ATTEMPTS),
+          };
+        };
         const recoverTask = async (): Promise<Task | undefined> => {
           if (!durableRecovery) return undefined;
           return await durableRecovery({
@@ -484,7 +649,16 @@ export function createInProcessPsychologyA2AFactory(
               // as an unavailable state; it must not bypass the ledger with a
               // speculative send.
               if (input.signal.aborted) return { status: "canceled" };
-              return { status: "unavailable" };
+              return unavailable({
+                executionId: messageId,
+                taskId: messageId,
+                expertId: input.approach,
+                attempt: 1,
+                phase: "recovery",
+                errorKind: "unknown",
+                errorName: "Error",
+                cause: "unknown",
+              });
             }
             if (invocationSignal.aborted) return { status: "canceled" };
             const recoveredPlan = recoverablePlanFromTask(task, {
@@ -492,20 +666,37 @@ export function createInProcessPsychologyA2AFactory(
               approach: input.approach,
               configurationRevision: binding.revision,
             });
-            if (recoveredPlan) return { status: "completed", plan: recoveredPlan };
+            if (recoveredPlan) return {
+              status: "completed",
+              plan: recoveredPlan,
+              diagnostics: completedDiagnosticsFromTask(
+                task!,
+                messageId,
+                input.approach,
+              ),
+            };
             const terminal = task?.status?.state !== undefined && (
               task.status.state === TASK_STATE.COMPLETED
               || task.status.state === TASK_STATE.FAILED
               || task.status.state === TASK_STATE.CANCELED
               || task.status.state === TASK_STATE.REJECTED
             );
-            if (terminal) return { status: "unavailable" };
+            if (terminal) return unavailable();
             if (task && !runningTaskMatchesRequest(task, {
               requestIdentity: messageId,
               approach: input.approach,
               configurationRevision: binding.revision,
               consultation: input.consultation,
-            })) return { status: "unavailable" };
+            })) return unavailable({
+              executionId: messageId,
+              taskId: task.id,
+              expertId: input.approach,
+              attempt: 1,
+              phase: "recovery",
+              errorKind: "policy",
+              errorName: "Error",
+              cause: "policy",
+            });
           }
           invocationSignals.set(messageId, invocationSignal);
           const outcome = await recoverA2ASendMessage({
@@ -522,7 +713,23 @@ export function createInProcessPsychologyA2AFactory(
           if (invocationSignal.aborted) return { status: "canceled" };
           if (outcome.status === "canceled") return { status: "canceled" };
           if (outcome.status !== "ok") {
-            return { status: "unavailable" };
+            return unavailable({
+              executionId: messageId,
+              taskId: messageId,
+              expertId: input.approach,
+              attempt: Math.max(1, outcome.attempts),
+              phase: "recovery",
+              errorKind: outcome.failure.kind === "network" || outcome.failure.kind === "timeout"
+                ? "provider_network"
+                : "unknown",
+              errorName: "Error",
+              ...(outcome.failure.kind === "timeout" ? { code: "TIMEOUT" } : {}),
+              cause: outcome.failure.kind === "timeout"
+                ? "timeout"
+                : outcome.failure.kind === "network"
+                  ? "network"
+                  : "unknown",
+            });
           }
           const matchesRequest = requestMatchesTask(outcome.task, {
             requestIdentity: messageId,
@@ -530,10 +737,36 @@ export function createInProcessPsychologyA2AFactory(
             configurationRevision: binding.revision,
           });
           const plan = planFromTask(outcome.task, input.approach);
-          if (!matchesRequest) return { status: "unavailable" };
+          if (!matchesRequest) {
+            return unavailable({
+              executionId: messageId,
+              taskId: outcome.task.id,
+              expertId: input.approach,
+              attempt: Math.max(1, outcome.attempts),
+              phase: "validation",
+              errorKind: "plan_validation",
+              errorName: "Error",
+              cause: "approach_mismatch",
+            });
+          }
           return plan
-            ? { status: "completed", plan }
-            : { status: "unavailable" };
+            ? {
+                status: "completed",
+                plan,
+                diagnostics: diagnosticsByExecution.get(messageId) ?? [],
+              }
+            : ((diagnosticsByExecution.get(messageId)?.length ?? 0) > 0
+              ? unavailable()
+              : unavailable({
+                executionId: messageId,
+                taskId: outcome.task.id,
+                expertId: input.approach,
+                attempt: Math.max(1, outcome.attempts),
+                phase: "artifact",
+                errorKind: "plan_validation",
+                errorName: "Error",
+                cause: "plan_schema",
+              }));
         } finally {
           clearTimeout(timer);
           if (invocationSignals.get(messageId) === invocationSignal) {

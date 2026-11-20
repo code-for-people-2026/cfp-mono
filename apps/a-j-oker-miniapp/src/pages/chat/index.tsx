@@ -1,11 +1,15 @@
 import { InteractionGuard } from "../../chat/interaction";
-import type { UserProfile } from "@cfp/a-j-oker-contracts";
+import {
+  imageGenerationBlocksRetry,
+  projectRetryLineage,
+  type UserProfile,
+} from "@cfp/a-j-oker-contracts";
 import { AgeGate } from "../../chat/age";
 import type { AgeStatus } from "@cfp/a-j-oker-contracts";
 import { installAiCopyLabels } from "../../chat/ai-copy";
 import { consentCurrent, type PrivacyStatus } from "../../chat/privacy";
 import { openPrivacy, openHelp, privacyChangedEvent, type PrivacyChange } from "../../chat/settings-navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Button as TaroButton,
   type ButtonProps,
@@ -23,6 +27,7 @@ import { ChatDock } from "../../chat/dock";
 import { Artifacts, LiveArtifacts } from "../../chat/artifacts";
 import { EvidenceCard } from "../../chat/evidence-card";
 import { DancingLoader } from "../../chat/dancing-loader";
+import { retryUserMessageVisible } from "../../chat/retry-history";
 import { resolveExpertAvatarSource } from "../../chat/expert-avatars";
 import { LoadingCarousel } from "../../chat/loading-carousel";
 import {
@@ -43,9 +48,13 @@ import {
   readSubmissionFailure,
   rememberSubmissionFailure,
 } from "../../chat/submission-failures";
-import { PresentationFrame } from "@cfp/chat-ui-taro/artifacts";
+import {
+  InlineFormKeyboardContext,
+  PresentationFrame,
+} from "@cfp/chat-ui-taro/artifacts";
 import { CopyMessage, MessageText } from "../../chat/message-text";
 import { ChatIcon } from "../../chat/icon";
+import { useInlineFormKeyboard } from "../../chat/inline-form-keyboard";
 import {
   type ClientEvent,
   type RunProgress,
@@ -100,6 +109,11 @@ const suggestions = [
   "最近有些累，想慢一点",
 ];
 
+export function visibleRetryLineage(rows: Turn[]) {
+  const { superseded } = projectRetryLineage(rows);
+  return rows.filter((row) => !superseded.has(row.id));
+}
+
 export default function Chat() {
   const [visible, setVisible] = useState(true);
   const pageHidden = useRef(false);
@@ -124,6 +138,22 @@ export default function Chat() {
   const [images, setImages] = useState<Record<number, string | null>>({});
   const [text, setText] = useState("");
   const [inputMode, setInputMode] = useState<"voice" | "keyboard">("voice");
+  const [composerKeyboardActive, setComposerKeyboardActive] = useState(false);
+  const [composerKeyboardHeight, setComposerKeyboardHeight] = useState(0);
+  const [composerFloating, setComposerFloating] = useState(false);
+  const {
+    handlers: inlineFormKeyboardHandlers,
+    overlay: inlineFormKeyboardOverlay,
+    active: inlineFormKeyboardActive,
+  } = useInlineFormKeyboard();
+  const inlineFormKeyboardActiveRef = useRef(false);
+  const handleComposerKeyboardFocus = useCallback((
+    focused: boolean,
+    event: { height: number },
+  ) => {
+    setComposerKeyboardActive(focused);
+    setComposerKeyboardHeight(event.height);
+  }, []);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const mode = useChatMode();
   const settingsNavigation = useRef(false);
@@ -138,6 +168,7 @@ export default function Chat() {
     text: string;
     images: Attachment[];
   }>();
+  const [retryingTurnId, setRetryingTurnId] = useState<number>();
   const followLatest = useRef(true);
   const pageTop = useRef(0);
   const scrollRevision = useRef(0);
@@ -288,6 +319,7 @@ export default function Chat() {
     setMemory(undefined);
     setProgress(undefined);
     setPending(undefined);
+    setRetryingTurnId(undefined);
     setMemoryOpen(false);
     setNavigationOpen(false);
     const previousFailure = submissions.current?.failureFor(id);
@@ -443,6 +475,7 @@ export default function Chat() {
     setInputMode("voice");
     setAttachments([]);
     setPending(undefined);
+    setRetryingTurnId(undefined);
     setProgress(undefined);
     setBusy(false);
     sendLock.current = false;
@@ -553,10 +586,16 @@ export default function Chat() {
       scrollRevision.current++;
     };
   }, []);
+
+  useEffect(() => {
+    inlineFormKeyboardActiveRef.current = inlineFormKeyboardActive;
+  }, [inlineFormKeyboardActive]);
+
   useEffect(() => {
     if (!history.length && !pending) return;
+    if (inlineFormKeyboardActiveRef.current) return;
     Taro.nextTick(() => {
-      if (followLatest.current)
+      if (followLatest.current && !inlineFormKeyboardActiveRef.current)
         void Taro.pageScrollTo({ selector: "#chat-end", duration: 0 }).catch(
           () => {},
         );
@@ -771,6 +810,31 @@ export default function Chat() {
     formSubmissionStates(history);
   const activeSpecialist = activeSpecialistTurn(history);
   const interimPreamble = interimHandoffPreamble(history, progress);
+  const historyById = new Map(history.map((row) => [row.id, row]));
+  const retryLineage = projectRetryLineage(history);
+  const visibleHistory = history.filter(
+    (row) => !retryLineage.superseded.has(row.id),
+  );
+  const visibleHistoryIds = new Set(visibleHistory.map((row) => row.id));
+  const pendingAssistantMessage = (
+    <View className="message assistant-message">
+      <View className="message-main">
+        <View className="bubble assistant-bubble thinking">
+          {busy && interimPreamble && (
+            <HandoffPreamble text={interimPreamble.text} />
+          )}
+          <DancingLoader />
+          <LoadingCarousel
+            progress={progress}
+            resetKey={loadingRun}
+          />
+          {progress && (
+            <LiveArtifacts messages={progress.messages} />
+          )}
+        </View>
+      </View>
+    </View>
+  );
   const returnToAj = async (taskId: string) => {
     try {
       await send({
@@ -819,6 +883,63 @@ export default function Chat() {
       }
     }
   }
+  async function retryFailedTurn(row: Turn) {
+    const exhaustedHandoff = row.status === "completed" &&
+      row.specialist?.handoff?.status === "failed";
+    if (
+      disabled ||
+      historyFailed ||
+      sendLock.current ||
+      (row.status !== "failed" && !exhaustedHandoff) ||
+      row.mode !== "platform" ||
+      row.input.action ||
+      (exhaustedHandoff && !!row.input.formResponse) ||
+      imageGenerationBlocksRetry(row.imageGeneration) ||
+      activeSession.current !== sessionId
+    ) return;
+    const version = scopeVersion.current;
+    const scope = sessionId;
+    if (!scope) return;
+    const preserveDeliveredRetry =
+      row.status === "completed" ||
+      !retryUserMessageVisible(row, historyById, visibleHistoryIds);
+    sendLock.current = true;
+    setRetryingTurnId(row.id);
+    setBusy(true);
+    setError("");
+    setLoadingRun((current) => current + 1);
+    try {
+      const result = await api.retryTurn(row.id);
+      if (
+        !pageAlive.current ||
+        version !== scopeVersion.current ||
+        activeSession.current !== scope
+      ) return;
+      if (!preserveDeliveredRetry) {
+        setHistory((current) => [
+          ...current.filter((item) => item.id !== result.id),
+          result,
+        ]);
+      }
+      await readHistory(scope);
+      await refreshSessions(version);
+    } catch (value) {
+      if (
+        pageAlive.current &&
+        version === scopeVersion.current &&
+        activeSession.current === scope
+      ) {
+        problem(value);
+        await readHistory(scope).catch(recoveryFailed);
+      }
+    } finally {
+      if (pageAlive.current && version === scopeVersion.current) {
+        setRetryingTurnId(undefined);
+        setBusy(false);
+        sendLock.current = false;
+      }
+    }
+  }
   async function submitForm(event: ClientEvent) {
     if (!consentCurrent(privacy) || !privacy?.consent?.sensitive) { void openPrivacy("authorization"); throw new Error("请先单独同意情绪练习的敏感信息处理"); }
     const match = event.action.surfaceId.match(/^turn_(\d+)_(.+)$/);
@@ -856,9 +977,14 @@ export default function Chat() {
     }
   }
   return (
-    <View className={h5 ? "h5-shell" : "native-shell"}>
+    <View
+      className={h5 ? "h5-shell" : `native-shell${inlineFormKeyboardActive ? " is-form-keyboard-open" : ""}`}
+    >
       <InteractionGuard enabled={visible && !loading && !!age?.allowed && consentCurrent(privacy)} revision={history.length} onUnavailable={() => { void api.getAge().then((s) => { setAge(s); if (!s.allowed) setAgeOpen(true); }).catch(() => {}); }} />
-      <View className="chat-app">
+      <InlineFormKeyboardContext.Provider
+        value={h5 ? null : inlineFormKeyboardHandlers}
+      >
+        <View className="chat-app">
         <ChatNavigation
           profile={profile}
           avatarSource={avatarSource}
@@ -928,9 +1054,15 @@ export default function Chat() {
                 阿 J 先生正在翻看我们聊过的日常…
               </Text>
             )}
-            {history.map((row, rowIndex) => (
+            {visibleHistory.map((row) => (
               <View className="turn" key={row.id}>
-                {!isFormOnlyInput(row.input) && (
+                {retryLineage.repeatedFallbacks.has(row.id) && (
+                  <View className="handoff-failure-notice" role="status">
+                    <Text>这次专家重试未完成，已保留上一条回复。</Text>
+                  </View>
+                )}
+                {!isFormOnlyInput(row.input) &&
+                  retryUserMessageVisible(row, historyById, visibleHistoryIds) && (
                   <View className="message user-message">
                     <View className="user-message-main">
                       <View className="bubble user-bubble">
@@ -977,8 +1109,21 @@ export default function Chat() {
                     </View>
                   </View>
                 )}
+                {retryingTurnId === row.id && row.status === "failed" ? (
+                  pendingAssistantMessage
+                ) : (
+                  <>
+                {!retryLineage.repeatedFallbacks.has(row.id) &&
+                  row.specialist?.handoff?.status === "failed" && (
+                  <View className="handoff-failure-notice" role="status">
+                    <Text>{row.status === "completed"
+                      ? `与${row.specialist.name}的本轮交接未完成，这条回复由阿 J 继续回应。`
+                      : `与${row.specialist.name}的本轮交接未完成，本轮没有生成回复。`}</Text>
+                  </View>
+                )}
                 <View className="message assistant-message">
                   <View className="message-main">
+                    {!retryLineage.repeatedFallbacks.has(row.id) && (
                     <View
                       data-ai-external={row.mode === "external" ? "true" : "false"}
                       className={`bubble assistant-bubble ${row.status === "failed" ? "failed-bubble" : ""}`}
@@ -994,13 +1139,13 @@ export default function Chat() {
                               : undefined;
                         const turnContent = (
                           <>
-                            <MessageText aiGenerated={row.status === "completed"} external={row.mode === "external"}>
+                            {!(row.status === "failed" && row.specialist?.handoff?.status === "failed") && <MessageText aiGenerated={row.status === "completed"} external={row.mode === "external"}>
                               {row.status === "completed"
                                 ? row.aJoker
                                 : row.status === "failed"
                                   ? row.error || "这一次没有完成，请查看下方提示。"
                                   : "这一轮尚未完成，请先确认上次发送；若长时间未完成，请联系开发者。"}
-                            </MessageText>
+                            </MessageText>}
                             {row.status === "completed" && (
                               <Artifacts
                                 external={row.mode === "external"}
@@ -1037,7 +1182,7 @@ export default function Chat() {
                             : turnContent;
                         }
                         const firstHandoff = !history
-                          .slice(0, rowIndex)
+                          .slice(0, history.findIndex((item) => item.id === row.id))
                           .some((previous) => specialistPresentationForTurn(previous)?.id === origin.id);
                         return (
                           <>
@@ -1070,10 +1215,32 @@ export default function Chat() {
                         );
                       })()}
                     </View>
+                  )}
                     <View className="message-footer">
                       <View className="message-actions">
+                        {(row.status === "failed" ||
+                          (row.status === "completed" && row.specialist?.handoff?.status === "failed" && !row.input.formResponse)) &&
+                          row.mode === "platform" &&
+                          !row.input.action &&
+                          !imageGenerationBlocksRetry(row.imageGeneration) &&
+                          retryingTurnId !== row.id &&
+                          !history.some((candidate) =>
+                            candidate.retryOfTurnId === row.id
+                          ) && (
+                            <Button
+                              className="control message-action"
+                              aria-label="重试这一轮"
+                              onLongPress={() => void Taro.showToast({ title: "重试这一轮", icon: "none" })}
+                              disabled={disabled || historyFailed}
+                              onClick={() => void retryFailedTurn(row)}
+                            >
+                              <ChatIcon name="rotateCw" />
+                            </Button>
+                          )}
                         {row.imageGeneration?.canResume && <Button className="control message-action" disabled={disabled} onClick={() => void resumeImage(row)}>继续取图</Button>}
-                        {row.status === "completed" && row.aJoker && (
+                        {row.status === "completed" &&
+                          row.aJoker &&
+                          !retryLineage.repeatedFallbacks.has(row.id) && (
                           <CopyMessage
                             external={row.mode === "external"}
                             value={row.aJoker}
@@ -1090,13 +1257,23 @@ export default function Chat() {
                         </Button>
                       </View>
                       <Text className="message-meta">
-                        {row.status === "completed"
+                        {row.status === "completed" &&
+                          !retryLineage.repeatedFallbacks.has(row.id)
                           ? "AI 生成 · 已保存"
                           : "这一轮尚未完成"}
                       </Text>
                     </View>
                   </View>
                 </View>
+                  </>
+                )}
+                {retryingTurnId === row.id &&
+                  row.status === "completed" &&
+                  !history.some((candidate) =>
+                    candidate.retryOfTurnId === row.id
+                  )
+                  ? pendingAssistantMessage
+                  : null}
               </View>
             ))}
             {pending && (
@@ -1116,23 +1293,7 @@ export default function Chat() {
                     </View>
                   </View>
                 </View>
-                <View className="message assistant-message">
-                  <View className="message-main">
-                    <View className="bubble assistant-bubble thinking">
-                      {busy && interimPreamble && (
-                        <HandoffPreamble text={interimPreamble.text} />
-                      )}
-                      <DancingLoader />
-                      <LoadingCarousel
-                        progress={progress}
-                        resetKey={loadingRun}
-                      />
-                      {progress && (
-                        <LiveArtifacts messages={progress.messages} />
-                      )}
-                    </View>
-                  </View>
-                </View>
+                {pendingAssistantMessage}
               </View>
             )}
             {busy && !pending && progress && (
@@ -1150,7 +1311,11 @@ export default function Chat() {
             <View id="chat-end" className="chat-end" />
           </View>
         </View>
-        <ChatDock>
+        <ChatDock
+          active={inputMode === "keyboard" && composerKeyboardActive}
+          keyboardHeight={composerKeyboardHeight}
+          onOverlayChange={setComposerFloating}
+        >
           {error && (
             <View className="error-banner">
               <Text>
@@ -1197,6 +1362,8 @@ export default function Chat() {
                 text={text}
                 attachments={attachments}
                 disabled={disabled || historyFailed || navigationOpen}
+                inputFixed={composerFloating}
+                onKeyboardFocusChange={handleComposerKeyboardFocus}
                 voiceDisabled={
                   disabled ||
                   !consentCurrent(privacy) ||
@@ -1235,6 +1402,15 @@ export default function Chat() {
             )}
           </View>
         </ChatDock>
+        <View
+          aria-hidden
+          className="form-keyboard-space"
+          style={{
+            height: inlineFormKeyboardActive
+              ? `${inlineFormKeyboardOverlay + 24}px`
+              : "0px",
+          }}
+        />
         {memoryOpen && (
           <MemoryPanel
             platformConfigured={!!settings?.platformConfigured}
@@ -1252,7 +1428,8 @@ export default function Chat() {
             onError={problem}
           />
         )}
-      </View>
+        </View>
+      </InlineFormKeyboardContext.Provider>
       {(ageOpen || !age?.loggedIn) && !identityExpired && <AgeGate profile={profile} avatarSource={avatarSource} status={age} loadingError={error} privacyReady={consentCurrent(privacy)} onChange={setAge}
         onRefresh={boot} onLogin={async () => { clearIdentityView(); await boot(); }}
         onPrivacy={() => void openPrivacy(age?.allowed && !consentCurrent(privacy) ? "authorization" : undefined)}

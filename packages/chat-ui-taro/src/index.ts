@@ -1,4 +1,8 @@
 export {
+  keyboardOverlayHeight,
+  type KeyboardViewportGeometry,
+} from "./keyboard-geometry";
+export {
   ChatComposer,
   type ChatComposerAttachment,
   type ChatComposerCopy,

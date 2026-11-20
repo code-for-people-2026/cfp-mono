@@ -37,6 +37,14 @@ export {
   type RecoverA2ASendMessageOptions,
 } from "./recovery";
 export {
+  retryA2AExecution,
+  type A2AExecutionRetryClassification,
+  type A2AExecutionRetryDisposition,
+  type A2AExecutionRetryFailure,
+  type A2AExecutionRetryOutcome,
+  type RetryA2AExecutionOptions,
+} from "./execution-retry";
+export {
   A2APeerClient,
   A2APeerRegistry,
   A2A_PEER_CONFIG_SCHEMA_VERSION,
