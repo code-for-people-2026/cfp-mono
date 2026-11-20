@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   imageGenerationBlocksRetry,
-  supersededRetryTurnIds,
+  projectRetryLineage,
 } from "./retry-lineage";
 
 describe("retry lineage contracts", () => {
@@ -15,50 +15,129 @@ describe("retry lineage contracts", () => {
     expect(imageGenerationBlocksRetry({ status: "unknown" })).toBe(false);
   });
 
-  it("supersedes noncompleted parents immediately but completed ancestors only after delivery", () => {
-    expect(
-      [...supersededRetryTurnIds([
-        { id: 1, status: "failed" },
-        { id: 2, status: "running", retryOfTurnId: 1 },
-      ])],
-    ).toEqual([1]);
+  it("keeps a delivered fallback when a retry failed before completion", () => {
+    const lineage = projectRetryLineage([
+      { id: 1, status: "failed" },
+      { id: 2, status: "running", retryOfTurnId: 1 },
+    ]);
 
-    expect(
-      [...supersededRetryTurnIds([
-        { id: 1, status: "completed" },
-        { id: 2, status: "failed", retryOfTurnId: 1 },
-      ])],
-    ).toEqual([]);
-
-    expect(
-      [...supersededRetryTurnIds([
-        { id: 1, status: "completed" },
-        { id: 2, status: "failed", retryOfTurnId: 1 },
-        { id: 3, status: "completed", retryOfTurnId: 2 },
-      ])],
-    ).toEqual([1, 2]);
+    expect([...lineage.superseded]).toEqual([1]);
+    expect([...lineage.repeatedFallbacks]).toEqual([]);
   });
 
-  it("rejects unknown or nonmonotonic lineage input", () => {
+  it("marks a completed failed handoff retry as a repeated fallback", () => {
+    const lineage = projectRetryLineage([
+      { id: 1, status: "completed" },
+      {
+        id: 2,
+        status: "completed",
+        retryOfTurnId: 1,
+        specialist: { handoff: { status: "failed" } },
+      },
+    ]);
+
+    expect([...lineage.superseded]).toEqual([]);
+    expect([...lineage.repeatedFallbacks]).toEqual([2]);
+  });
+
+  it("propagates successful delivery through a retry chain", () => {
+    const lineage = projectRetryLineage([
+      { id: 1, status: "completed" },
+      { id: 2, status: "failed", retryOfTurnId: 1 },
+      { id: 3, status: "running", retryOfTurnId: 2 },
+      { id: 4, status: "completed", retryOfTurnId: 3 },
+    ]);
+
+    expect([...lineage.superseded]).toEqual([1, 2, 3]);
+    expect([...lineage.repeatedFallbacks]).toEqual([]);
+  });
+
+  it("propagates fallback ancestry through failed and running retries", () => {
+    const lineage = projectRetryLineage([
+      { id: 1, status: "completed" },
+      { id: 2, status: "failed", retryOfTurnId: 1 },
+      { id: 3, status: "running", retryOfTurnId: 2 },
+      {
+        id: 4,
+        status: "completed",
+        retryOfTurnId: 3,
+        specialist: { handoff: { status: "failed" } },
+      },
+    ]);
+
+    expect([...lineage.superseded]).toEqual([2, 3]);
+    expect([...lineage.repeatedFallbacks]).toEqual([4]);
+  });
+
+  it("keeps a first completed fallback with no earlier delivered ancestor", () => {
+    const lineage = projectRetryLineage([
+      { id: 1, status: "failed" },
+      {
+        id: 2,
+        status: "completed",
+        retryOfTurnId: 1,
+        specialist: { handoff: { status: "failed" } },
+      },
+      { id: 3, status: "failed", retryOfTurnId: 2 },
+      { id: 4, status: "running", retryOfTurnId: 3 },
+    ]);
+
+    expect([...lineage.superseded]).toEqual([1, 3]);
+    expect([...lineage.repeatedFallbacks]).toEqual([]);
+  });
+
+  it("rejects invalid lineage rows without adding specialist validation", () => {
     expect(() =>
-      supersededRetryTurnIds([{ id: 0, status: "failed" }]),
+      projectRetryLineage([{ id: 0, status: "failed" }]),
     ).toThrow(/positive integers/);
     expect(() =>
-      supersededRetryTurnIds([{ id: 1, status: "queued" as never }]),
+      projectRetryLineage([{ id: 1, status: "queued" as never }]),
     ).toThrow(/status is invalid/);
+    expect(() =>
+      projectRetryLineage([
+        { id: 1, status: "failed", retryOfTurnId: 0 },
+      ]),
+    ).toThrow(/positive integers/);
+    expect(() =>
+      projectRetryLineage([
+        {
+          id: 1,
+          status: "completed",
+          specialist: { handoff: { status: 2 as unknown as string } },
+        },
+      ]),
+    ).not.toThrow();
   });
 
-  it("tolerates replay order and skips unsafe retry links", () => {
-    expect(
-      [
-        ...supersededRetryTurnIds([
-          { id: 4, status: "completed", retryOfTurnId: 2 },
-          { id: 2, status: "failed", retryOfTurnId: 1 },
-          { id: 5, status: "running", retryOfTurnId: 9 },
-          { id: 1, status: "completed" },
-          { id: 3, status: "failed", retryOfTurnId: 3 },
-        ]),
-      ],
-    ).toEqual([1, 2]);
+  it("tolerates out-of-order replay and skips unsafe retry links", () => {
+    const ordered = projectRetryLineage([
+      { id: 1, status: "completed" },
+      { id: 2, status: "failed", retryOfTurnId: 1 },
+      { id: 3, status: "running", retryOfTurnId: 2 },
+      {
+        id: 4,
+        status: "completed",
+        retryOfTurnId: 3,
+        specialist: { handoff: { status: "failed" } },
+      },
+    ]);
+    const replayed = projectRetryLineage([
+      {
+        id: 4,
+        status: "completed",
+        retryOfTurnId: 3,
+        specialist: { handoff: { status: "failed" } },
+      },
+      { id: 3, status: "running", retryOfTurnId: 2 },
+      { id: 2, status: "failed", retryOfTurnId: 1 },
+      { id: 1, status: "completed" },
+      { id: 5, status: "running", retryOfTurnId: 9 },
+      { id: 6, status: "failed", retryOfTurnId: 6 },
+    ]);
+
+    expect([...replayed.superseded]).toEqual([...ordered.superseded]);
+    expect([...replayed.repeatedFallbacks]).toEqual([
+      ...ordered.repeatedFallbacks,
+    ]);
   });
 });

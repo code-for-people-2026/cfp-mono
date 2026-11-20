@@ -44,6 +44,31 @@ function serviceFor(rows: AJokerRecord[], memory: Record<string, unknown> = {}) 
   return { service: new ContextService(repo), repo };
 }
 
+function failedHandoffSpecialist(): NonNullable<AJokerRecord["specialist"]> {
+  return {
+    taskId: "task-2",
+    expertId: "supportive",
+    name: "支持对话",
+    method: "支持性对话",
+    configurationRevision: "revision-1",
+    theme: "sage",
+    layout: "reflection",
+    status: "unavailable",
+    sources: [],
+    currentTask: "重试专家回应",
+    prompt: "重试专家回应的私密指令",
+    allowedComponents: ["form"],
+    preferredComponents: ["form"],
+    handoff: {
+      schemaVersion: 1,
+      status: "failed",
+      attempts: 3,
+      finalDisposition: "retry_exhausted",
+      diagnostics: [],
+    },
+  };
+}
+
 describe("ContextService retry lineage", () => {
   it("keeps a delivered fallback until a completed chained replacement exists", async () => {
     const unrelated = row(1, "completed");
@@ -102,6 +127,56 @@ describe("ContextService retry lineage", () => {
       });
     },
   );
+
+  it("keeps the delivered fallback and omits a completed failed-handoff retry", async () => {
+    const unrelated = row(1, "completed");
+    const fallback = row(2, "completed", { aJoker: "原回应" });
+    const repeatedFallback = row(3, "completed", {
+      requestKey: `${owner}:${retryRequestId(owner, 2)}`,
+      aJoker: "重复回退回应",
+      specialist: failedHandoffSpecialist(),
+    });
+    const { service } = serviceFor([unrelated, fallback, repeatedFallback]);
+
+    expect(await service.modelContext(3)).toEqual({
+      memory: "",
+      previous: [
+        { input: { text: "输入 1", mediaIds: [] }, aJoker: "回应 1" },
+        { input: { text: "输入 2", mediaIds: [] }, aJoker: "原回应" },
+      ],
+    });
+  });
+
+  it("omits repeated fallbacks after failed and running retry intermediates", async () => {
+    const unrelated = row(1, "completed");
+    const fallback = row(2, "completed", { aJoker: "原回应" });
+    const failedRetry = row(3, "failed", {
+      requestKey: `${owner}:${retryRequestId(owner, 2)}`,
+    });
+    const pendingRetry = row(4, "running", {
+      requestKey: `${owner}:${retryRequestId(owner, 3)}`,
+    });
+    const repeatedFallback = row(5, "completed", {
+      requestKey: `${owner}:${retryRequestId(owner, 4)}`,
+      aJoker: "重复回退回应",
+      specialist: failedHandoffSpecialist(),
+    });
+    const { service } = serviceFor([
+      unrelated,
+      fallback,
+      failedRetry,
+      pendingRetry,
+      repeatedFallback,
+    ]);
+
+    expect(await service.modelContext(3)).toEqual({
+      memory: "",
+      previous: [
+        { input: { text: "输入 1", mediaIds: [] }, aJoker: "回应 1" },
+        { input: { text: "输入 2", mediaIds: [] }, aJoker: "原回应" },
+      ],
+    });
+  });
 
   it("respects an existing summary cursor without rewriting compacted history", async () => {
     const compactedFallback = row(2, "completed", { aJoker: "旧回应" });

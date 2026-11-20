@@ -4,7 +4,7 @@ import type {
   ModelContext,
   AdTicket,
 } from "@cfp/a-j-oker-contracts";
-import { supersededRetryTurnIds } from "@cfp/a-j-oker-contracts";
+import { projectRetryLineage } from "@cfp/a-j-oker-contracts";
 import { SUMMARY_PROMPT_VERSION } from "../agent/summary-instruction";
 import { summarizeContext, type Summarizer } from "../agent/summarize";
 import { AppError } from "./contracts";
@@ -45,15 +45,21 @@ export class ContextService {
         ],
       });
     const lineages = retryLineages(this.repo.owner.id, rows);
-    const superseded = supersededRetryTurnIds(
+    const { superseded, repeatedFallbacks } = projectRetryLineage(
       rows.map((row, index) => ({
         id: row.id,
         status: row.status,
+        specialist: row.specialist,
         ...lineages[index],
       })),
     );
     const turns = rows
-      .filter((row) => row.status === "completed" && !superseded.has(row.id))
+      .filter(
+        (row) =>
+          row.status === "completed" &&
+          !superseded.has(row.id) &&
+          !repeatedFallbacks.has(row.id),
+      )
       .map(toMemoryTurn);
     return { memory, turns };
   }

@@ -1,7 +1,7 @@
 import { InteractionGuard } from "../../chat/interaction";
 import {
   imageGenerationBlocksRetry,
-  supersededRetryTurnIds,
+  projectRetryLineage,
   type UserProfile,
 } from "@cfp/a-j-oker-contracts";
 import { AgeGate } from "../../chat/age";
@@ -110,7 +110,7 @@ const suggestions = [
 ];
 
 export function visibleRetryLineage(rows: Turn[]) {
-  const superseded = supersededRetryTurnIds(rows);
+  const { superseded } = projectRetryLineage(rows);
   return rows.filter((row) => !superseded.has(row.id));
 }
 
@@ -811,7 +811,10 @@ export default function Chat() {
   const activeSpecialist = activeSpecialistTurn(history);
   const interimPreamble = interimHandoffPreamble(history, progress);
   const historyById = new Map(history.map((row) => [row.id, row]));
-  const visibleHistory = visibleRetryLineage(history);
+  const retryLineage = projectRetryLineage(history);
+  const visibleHistory = history.filter(
+    (row) => !retryLineage.superseded.has(row.id),
+  );
   const visibleHistoryIds = new Set(visibleHistory.map((row) => row.id));
   const pendingAssistantMessage = (
     <View className="message assistant-message">
@@ -897,6 +900,9 @@ export default function Chat() {
     const version = scopeVersion.current;
     const scope = sessionId;
     if (!scope) return;
+    const preserveDeliveredRetry =
+      row.status === "completed" ||
+      !retryUserMessageVisible(row, historyById, visibleHistoryIds);
     sendLock.current = true;
     setRetryingTurnId(row.id);
     setBusy(true);
@@ -909,10 +915,12 @@ export default function Chat() {
         version !== scopeVersion.current ||
         activeSession.current !== scope
       ) return;
-      setHistory((current) => [
-        ...current.filter((item) => item.id !== result.id),
-        result,
-      ]);
+      if (!preserveDeliveredRetry) {
+        setHistory((current) => [
+          ...current.filter((item) => item.id !== result.id),
+          result,
+        ]);
+      }
       await readHistory(scope);
       await refreshSessions(version);
     } catch (value) {
@@ -1048,6 +1056,11 @@ export default function Chat() {
             )}
             {visibleHistory.map((row) => (
               <View className="turn" key={row.id}>
+                {retryLineage.repeatedFallbacks.has(row.id) && (
+                  <View className="handoff-failure-notice" role="status">
+                    <Text>这次专家重试未完成，已保留上一条回复。</Text>
+                  </View>
+                )}
                 {!isFormOnlyInput(row.input) &&
                   retryUserMessageVisible(row, historyById, visibleHistoryIds) && (
                   <View className="message user-message">
@@ -1096,13 +1109,12 @@ export default function Chat() {
                     </View>
                   </View>
                 )}
-                {row.status === "running" && row.retryOfTurnId !== undefined ? (
-                  pendingAssistantMessage
-                ) : retryingTurnId === row.id && row.status === "failed" ? (
+                {retryingTurnId === row.id && row.status === "failed" ? (
                   pendingAssistantMessage
                 ) : (
                   <>
-                {row.specialist?.handoff?.status === "failed" && (
+                {!retryLineage.repeatedFallbacks.has(row.id) &&
+                  row.specialist?.handoff?.status === "failed" && (
                   <View className="handoff-failure-notice" role="status">
                     <Text>{row.status === "completed"
                       ? `与${row.specialist.name}的本轮交接未完成，这条回复由阿 J 继续回应。`
@@ -1111,6 +1123,7 @@ export default function Chat() {
                 )}
                 <View className="message assistant-message">
                   <View className="message-main">
+                    {!retryLineage.repeatedFallbacks.has(row.id) && (
                     <View
                       data-ai-external={row.mode === "external" ? "true" : "false"}
                       className={`bubble assistant-bubble ${row.status === "failed" ? "failed-bubble" : ""}`}
@@ -1202,6 +1215,7 @@ export default function Chat() {
                         );
                       })()}
                     </View>
+                  )}
                     <View className="message-footer">
                       <View className="message-actions">
                         {(row.status === "failed" ||
@@ -1224,7 +1238,9 @@ export default function Chat() {
                             </Button>
                           )}
                         {row.imageGeneration?.canResume && <Button className="control message-action" disabled={disabled} onClick={() => void resumeImage(row)}>继续取图</Button>}
-                        {row.status === "completed" && row.aJoker && (
+                        {row.status === "completed" &&
+                          row.aJoker &&
+                          !retryLineage.repeatedFallbacks.has(row.id) && (
                           <CopyMessage
                             external={row.mode === "external"}
                             value={row.aJoker}
@@ -1241,7 +1257,8 @@ export default function Chat() {
                         </Button>
                       </View>
                       <Text className="message-meta">
-                        {row.status === "completed"
+                        {row.status === "completed" &&
+                          !retryLineage.repeatedFallbacks.has(row.id)
                           ? "AI 生成 · 已保存"
                           : "这一轮尚未完成"}
                       </Text>
